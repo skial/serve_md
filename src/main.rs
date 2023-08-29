@@ -8,7 +8,8 @@ use std::{
     io::Read, 
     ops::Range, 
     net::SocketAddr,
-    path::Path as SysPath,
+    path::Path as SysPath, 
+    collections::HashMap,
 };
 
 use axum::{ 
@@ -26,10 +27,11 @@ use pulldown_cmark::{
     Event,
     html,
     Tag,
-    HeadingLevel
+    HeadingLevel, LinkDef, RefDefs,
 };
 
-use clap::Parser as CliParser;
+use clap::{Parser as CliParser, ValueEnum};
+use gray_matter::{ParsedEntity, Matter, engine::{YAML, JSON, TOML}};
 
 #[derive(CliParser, Debug)]
 struct Cli {
@@ -55,8 +57,23 @@ struct Cli {
     /// Enables smart punctuation.
     #[arg(short = 'p', long)]
     smart_punctuation:bool,
+    /// Enables header attributes.
+    #[arg(short = 'a', long)]
+    header_attributes:bool,
+
+    /// The type of front matter.
+    #[arg(short = 'm', long, value_enum)]
+    front_matter:Option<FrontMatter>,
 
     // TODO allow `config.{toml,json}` parsed to load the exact values above?
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+enum FrontMatter {
+    Json,
+    Toml,
+    Yaml,
+    Refdef, // probably a better name can be thought of
 }
 
 #[tokio::main]
@@ -101,7 +118,11 @@ async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Response {
     match SysPath::new(&path).extension() {
         Some(x) if (x == "md") => {
             println!("Tt's markdown");
-            commonmark_as_str(path).into_response()
+            if let Some(x) = commonmark_as_str(path) {
+                x.into_response()
+            } else {
+                StatusCode::NOT_FOUND.into_response()
+            }
         },
         Some(x) if (x == "html") => {
             println!("Tt's html");
@@ -120,15 +141,20 @@ fn commonmark_as_html(path:String, state:Arc<Cli>) -> Html<String> {
     Html(parse_md(path, state))
 }
 
-fn commonmark_as_str(path:String) -> String {
+fn commonmark_as_str(path:String) -> Option<String> {
     println!("raw {:?}", path);
     let content = fetch_md(&path);
     if let Some(content) = content {
         println!("loaded");
-        str::from_utf8(content.as_slice()).unwrap().to_string()
+        if let Ok(s) = str::from_utf8(&content) {
+            Some(s.to_string())
+        } else {
+            None
+        }
+        
     } else {
         println!("failed to find");
-        "".to_owned()
+        None
     }
 }
 
@@ -158,110 +184,171 @@ fn parse_md(path:String, state:Arc<Cli>) -> String {
         let buf = fetch_md(&path);
 
         if let Some(buf) = buf {
-            // All roundups all start with link references which are used for metadata/front matter.
-            // pulldown-cmark ignores successive reference keys.
-            // Attempt to remove header meta, run a parser for each line, store refdefs etc.
-            let needle = b"#";
-            let index = buf.as_slice().windows( needle.len() ).position(|w| w == needle );
-            println!("{:?}", index);
-            let pair = buf.split_at(index.unwrap());
-            println!("{:?}", str::from_utf8(pair.0).unwrap());
-            println!("{:?}", str::from_utf8(pair.1).unwrap());
+            let mut buf = &buf[..];
+            let mut matter:Option<ParsedEntity> = None;
 
-            // TODO Add support for yaml / tomal front matter from pulldown-cmark.
+            // Handle front matter with gray_matter
+            match state.front_matter {
+                Some(FrontMatter::Yaml) => {
+                    if let Ok(s) = str::from_utf8(&buf) {
+                        println!("parse yaml");
+                        let m = Matter::<YAML>::new();
+                        matter = Some(m.parse(s));
+
+                    } else {
+                        println!("error yaml");
+                    }
+                },
+                Some(FrontMatter::Json) => {
+                    if let Ok(s) = str::from_utf8(&buf) {
+                        println!("parse json");
+                        let m = Matter::<JSON>::new();
+                        matter = Some(m.parse(s));
+
+                    } else {
+                        println!("error json");
+                    }
+                },
+                Some(FrontMatter::Toml) => {
+                    if let Ok(s) = str::from_utf8(&buf) {
+                        println!("parse toml");
+                        let m = Matter::<TOML>::new();
+                        matter = Some(m.parse(s));
+
+                    } else {
+                        println!("error toml");
+                    }
+                },
+                Some(FrontMatter::Refdef) => {
+                    println!("parse refdef");
+                    // Can not implement custom Engine, as gray_matter
+                    // needs a delimiters to work.
+                    try_parse_refdef(buf);
+                },
+                None => {}
+            }
+
+            println!("{:?}", matter);
+
+            if let Some(info) = &matter {
+                if let Some(_) = &info.data {
+                    // update `buf` to be remaining text minus the front matter.
+                    println!("{:?}", info.content);
+                    buf = &info.content.as_bytes();
+                }
+            }
 
             let mut md_opt = Options::empty();
-            md_opt.insert(Options::ENABLE_HEADING_ATTRIBUTES);
-            let mut md_parser = CmParser::new_ext(str::from_utf8(&buf).unwrap(), md_opt);
+            if state.tables {
+                md_opt.insert(Options::ENABLE_TABLES);
+            }
+            if state.footnotes {
+                md_opt.insert(Options::ENABLE_FOOTNOTES);
+            }
+            if state.strikethrough {
+                md_opt.insert(Options::ENABLE_STRIKETHROUGH);
+            }
+            if state.smart_punctuation {
+                md_opt.insert(Options::ENABLE_SMART_PUNCTUATION);
+            }
+            if state.header_attributes {
+                md_opt.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+            }
 
-            let mut ranges:Vec<Range<usize>> = Vec::new();
-            let mut range:Option<Range<usize>> = None;
-            let collection:Vec<_> = (0..).zip(&mut md_parser).collect();
-            let collection = collection.as_slice();
+            if let Ok(s) = str::from_utf8(&buf) {
+                let mut md_parser = CmParser::new_ext(s, md_opt);
 
-            for slice in collection.windows(4) {
-                match slice {
-                    [
-                        (a, Event::Start(Tag::Heading(HeadingLevel::H5, _, _))), 
-                        (_, Event::Start(Tag::Emphasis)),
-                        (_, Event::Text(CowStr::Borrowed("in case you missed it"))),
-                        (b, Event::End(Tag::Emphasis))
-                    ] => {
-                        //println!("{:?}", slice);
-                        finish_and_store(&mut ranges, &mut range, *b);
+                let mut ranges:Vec<Range<usize>> = Vec::new();
+                let mut range:Option<Range<usize>> = None;
+                let collection:Vec<_> = (0..).zip(&mut md_parser).collect();
+                let collection = collection.as_slice();
 
-                        if range.is_none() {
-                            range = Some(*a..*b);
+                for slice in collection.windows(4) {
+                    match slice {
+                        [
+                            (a, Event::Start(Tag::Heading(HeadingLevel::H5, _, _))), 
+                            (_, Event::Start(Tag::Emphasis)),
+                            (_, Event::Text(CowStr::Borrowed("in case you missed it"))),
+                            (b, Event::End(Tag::Emphasis))
+                        ] => {
+                            //println!("{:?}", slice);
+                            finish_and_store(&mut ranges, &mut range, *b);
+
+                            if range.is_none() {
+                                range = Some(*a..*b);
+                            }
+                        },
+                        [(idx, Event::Start(Tag::Heading(_, _, _))), _] if range.is_some() => {
+                            finish_and_store(&mut ranges, &mut range, *idx+1);
+                        },
+                        x => {
+                            println!("{:?}", x);
                         }
-                    },
-                    [(idx, Event::Start(Tag::Heading(_, _, _))), _] if range.is_some() => {
-                        finish_and_store(&mut ranges, &mut range, *idx+1);
-                    },
-                    x => {
-                        println!("{:?}", x);
                     }
                 }
-            }
 
-            finish_and_store(&mut ranges, &mut range, collection.last().unwrap().0+1);
+                finish_and_store(&mut ranges, &mut range, collection.last().unwrap().0+1);
 
-            //println!("{:?}", ranges);
+                //println!("{:?}", ranges);
 
-            let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len()*3) );
+                let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len()*3) );
 
-            if !ranges.is_empty() {
-                let Some(range) = ranges.pop() else {
-                    panic!("`ranges` should not be empty at this point.");
-                };
+                if !ranges.is_empty() {
+                    let Some(range) = ranges.pop() else {
+                        panic!("`ranges` should not be empty at this point.");
+                    };
 
-                let mut i:usize = 0;
+                    let mut i:usize = 0;
 
-                while i < collection.len() {
-                    let pair = &collection[i];
-                    if !range.contains(&pair.0) {
-                        new_collection.push(pair.1.to_owned());
-                        i += 1;
-                        continue;
+                    while i < collection.len() {
+                        let pair = &collection[i];
+                        if !range.contains(&pair.0) {
+                            new_collection.push(pair.1.to_owned());
+                            i += 1;
+                            continue;
+                        }
+
+                        new_collection.push(Event::Html(CowStr::Borrowed("<details open>")));
+                        new_collection.push(Event::SoftBreak);
+                        new_collection.push(Event::Html(CowStr::Borrowed("<summary>")));
+                        let mut iter = range
+                            .clone()
+                            // skip the open h5 tag
+                            .skip(1);
+                        new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
+                        new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
+                        new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
+                        new_collection.push(Event::Html(CowStr::Borrowed("</summary>")));
+                        iter
+                            // skip the end h5 tag
+                            .skip(1)
+                            .for_each(|ridx| {
+                                let (_, e) = &collection[ridx];
+                                new_collection.push( e.to_owned() );
+                            });
+                        new_collection.push(Event::Html(CowStr::Borrowed("</details>")));
+
+                        i += range.len();
+
                     }
-
-                    new_collection.push(Event::Html(CowStr::Borrowed("<details open>")));
-                    new_collection.push(Event::SoftBreak);
-                    new_collection.push(Event::Html(CowStr::Borrowed("<summary>")));
-                    let mut iter = range
-                        .clone()
-                        // skip the open h5 tag
-                        .skip(1);
-                    new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
-                    new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
-                    new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
-                    new_collection.push(Event::Html(CowStr::Borrowed("</summary>")));
-                    iter
-                        // skip the end h5 tag
-                        .skip(1)
-                        .for_each(|ridx| {
-                            let (_, e) = &collection[ridx];
-                            new_collection.push( e.to_owned() );
-                        });
-                    new_collection.push(Event::Html(CowStr::Borrowed("</details>")));
-
-                    i += range.len();
-
                 }
+
+                let mut html_output = String::new();
+                html::push_html(&mut html_output,  new_collection.into_iter());
+
+                println!("{}", &html_output);
+
+                for i in md_parser.reference_definitions().iter() {
+                    println!("{:?}", i);
+                }
+
+                /*for event in collection.iter() {
+                    println!("{:?}", event);
+                }*/
+                return html_output
+
             }
-
-            let mut html_output = String::new();
-            html::push_html(&mut html_output,  new_collection.into_iter());
-
-            println!("{}", &html_output);
-
-            for i in md_parser.reference_definitions().iter() {
-                println!("{:?}", i);
-            }
-
-            /*for event in collection.iter() {
-                println!("{:?}", event);
-            }*/
-            return html_output
+            
         }
         
     }
@@ -275,5 +362,98 @@ fn finish_and_store(rs:&mut Vec<Range<usize>>, r:&mut Option<Range<usize>>, end:
         let _tmp = v.to_owned();
         *r = None;
         rs.push(_tmp);
+    }
+}
+
+fn try_parse_refdef<'a>(slice:&'a [u8]) {
+    // All roundups all start with link references which are used for metadata/front matter.
+    // pulldown-cmark ignores successive reference keys.
+    // Attempt to remove header meta, run a parser for each line, store refdefs etc.
+    // let needle = b"#";
+    // let index = buf.as_slice().windows( needle.len() ).position(|w| w == needle );
+    // println!("{:?}", index);
+    // let pair = buf.split_at(index.unwrap());
+    // println!("{:?}", str::from_utf8(pair.0).unwrap());
+    // println!("{:?}", str::from_utf8(pair.1).unwrap());
+
+    // Current each refdef needs to be contained on a single line.
+    // Unlike valid commonmark, no newlines can exist between any part of a refdef.
+    let mut til_end:bool = false;
+    let mut range:Option<Range<usize>> = None;
+    for i in 0..slice.len() {
+        match slice[i] {
+            b'[' if !til_end => {
+                til_end = true;
+                if range.is_none() {
+                    range = Some(i..0);
+
+                }
+            },
+            b'\n' => {
+                if let Some(ref mut range) = range {
+                    range.end = i;
+                }
+                til_end = false;
+            },
+            _ if til_end => {
+                continue;
+            },
+            x => {
+                println!("idx: {:?} - char: {:?}", i, str::from_utf8(&[x]).unwrap());
+                break;
+            }
+        }
+    }
+
+    println!("{:?}", range);
+    if let Some(ref mut r) = range {
+        println!("{:?}", str::from_utf8(&slice[r.start..r.end]).unwrap());
+
+    }
+
+    let mut map:HashMap<&str, Vec<LinkDef>> = HashMap::new();
+
+    if let Some(ref r) = range {
+        let gray_matter = &slice[r.start..r.end];
+
+        // Everything that follows feels verbose and not very rusty.
+        let ps:Vec<_> = gray_matter
+            .split(|c| c.eq(&b'\n'))
+            .map( |slice| {
+                str::from_utf8(&slice)
+            } )
+            .filter(|result| result.is_ok() )
+            .map( |r| r.unwrap() )
+            .map( |s: &'a str| {
+                let p:CmParser<'a, '_> = CmParser::new_ext(&s, Options::empty());
+                p
+            } )
+            .collect()
+            ;
+
+        let vs:Vec<_> = ps.iter()
+            .map( |p| {
+                p.reference_definitions()
+            } )
+            .map( |rd| {
+                rd.iter().collect::<Vec<_>>()
+            } )
+            .fold(vec![], |mut c, mut v| {
+                c.append(&mut v);
+                c
+            } )
+            ;
+
+        for (key, item) in vs {
+            if map.contains_key(key) {
+                if let Some(vs) = map.get_mut(key) {
+                    vs.push(item.to_owned());
+                }
+            } else {
+                map.insert(key, vec![item.to_owned()]);
+            }
+        }
+
+        println!("map is {:?}", map);
     }
 }
