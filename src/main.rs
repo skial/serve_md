@@ -1,4 +1,4 @@
-#![allow(clippy::pedantic, clippy::correctness, clippy::perf, clippy::style, clippy::restriction)]
+#![allow(clippy::invalid_regex, clippy::pedantic, clippy::correctness, clippy::perf, clippy::style, clippy::restriction)]
 
 use std::{
     str, 
@@ -27,7 +27,8 @@ use pulldown_cmark::{
     Event,
     html,
     Tag,
-    HeadingLevel, LinkDef, RefDefs,
+    HeadingLevel, 
+    LinkDef,
 };
 
 use clap::{Parser as CliParser, ValueEnum};
@@ -186,6 +187,8 @@ fn parse_md(path:String, state:Arc<Cli>) -> String {
         if let Some(buf) = buf {
             let mut buf = &buf[..];
             let mut matter:Option<ParsedEntity> = None;
+            let mut map:HashMap<&str, Vec<LinkDef>> = HashMap::new();
+            let mut refdef = RefDefMatter::new(buf);
 
             // Handle front matter with gray_matter
             match state.front_matter {
@@ -223,12 +226,14 @@ fn parse_md(path:String, state:Arc<Cli>) -> String {
                     println!("parse refdef");
                     // Can not implement custom Engine, as gray_matter
                     // needs a delimiters to work.
-                    try_parse_refdef(buf);
+                    refdef.scan();
+                    if let Some(m) = refdef.parse_gray_matter() {
+                        map.extend(m);
+                        //map = m;
+                    }
                 },
                 None => {}
             }
-
-            println!("{:?}", matter);
 
             if let Some(info) = &matter {
                 if let Some(_) = &info.data {
@@ -289,7 +294,7 @@ fn parse_md(path:String, state:Arc<Cli>) -> String {
 
                 finish_and_store(&mut ranges, &mut range, collection.last().unwrap().0+1);
 
-                //println!("{:?}", ranges);
+                println!("ranges are {:?}", ranges);
 
                 let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len()*3) );
 
@@ -331,19 +336,19 @@ fn parse_md(path:String, state:Arc<Cli>) -> String {
                         i += range.len();
 
                     }
+                } else {
+                    new_collection.extend(collection.iter().map(|c| c.1.to_owned()));
+
                 }
 
+                assert!(new_collection.len() != 0);
                 let mut html_output = String::new();
                 html::push_html(&mut html_output,  new_collection.into_iter());
 
                 println!("{}", &html_output);
 
-                for i in md_parser.reference_definitions().iter() {
+                /*for i in md_parser.reference_definitions().iter() {
                     println!("{:?}", i);
-                }
-
-                /*for event in collection.iter() {
-                    println!("{:?}", event);
                 }*/
                 return html_output
 
@@ -365,95 +370,131 @@ fn finish_and_store(rs:&mut Vec<Range<usize>>, r:&mut Option<Range<usize>>, end:
     }
 }
 
-fn try_parse_refdef<'a>(slice:&'a [u8]) {
-    // All roundups all start with link references which are used for metadata/front matter.
-    // pulldown-cmark ignores successive reference keys.
-    // Attempt to remove header meta, run a parser for each line, store refdefs etc.
-    // let needle = b"#";
-    // let index = buf.as_slice().windows( needle.len() ).position(|w| w == needle );
-    // println!("{:?}", index);
-    // let pair = buf.split_at(index.unwrap());
-    // println!("{:?}", str::from_utf8(pair.0).unwrap());
-    // println!("{:?}", str::from_utf8(pair.1).unwrap());
+#[derive(Debug, Clone)]
+struct RefDefMatter<'input> {
+    slice:&'input [u8],
+    range:Option<Range<usize>>,
+}
 
-    // Current each refdef needs to be contained on a single line.
-    // Unlike valid commonmark, no newlines can exist between any part of a refdef.
-    let mut til_end:bool = false;
-    let mut range:Option<Range<usize>> = None;
-    for i in 0..slice.len() {
-        match slice[i] {
-            b'[' if !til_end => {
-                til_end = true;
-                if range.is_none() {
-                    range = Some(i..0);
+impl<'input> RefDefMatter<'input> {
 
-                }
-            },
-            b'\n' => {
-                if let Some(ref mut range) = range {
-                    range.end = i;
-                }
-                til_end = false;
-            },
-            _ if til_end => {
-                continue;
-            },
-            x => {
-                println!("idx: {:?} - char: {:?}", i, str::from_utf8(&[x]).unwrap());
-                break;
-            }
-        }
+    fn new(slice:&'input [u8]) -> RefDefMatter<'input> {
+        RefDefMatter { range: None, slice, }
     }
 
-    println!("{:?}", range);
-    if let Some(ref mut r) = range {
-        println!("{:?}", str::from_utf8(&slice[r.start..r.end]).unwrap());
+    fn scan(&mut self) {
+        // Current each refdef needs to be contained on a single line.
+        // Unlike valid commonmark, no newlines can exist between any part of a refdef.
+        let mut til_end:bool = false;
 
-    }
+        for i in 0..self.slice.len() {
+            match self.slice[i] {
+                b'[' if !til_end => {
+                    til_end = true;
+                    if self.range.is_none() {
+                        self.range = Some(i..0);
 
-    let mut map:HashMap<&str, Vec<LinkDef>> = HashMap::new();
-
-    if let Some(ref r) = range {
-        let gray_matter = &slice[r.start..r.end];
-
-        // Everything that follows feels verbose and not very rusty.
-        let ps:Vec<_> = gray_matter
-            .split(|c| c.eq(&b'\n'))
-            .map( |slice| {
-                str::from_utf8(&slice)
-            } )
-            .filter(|result| result.is_ok() )
-            .map( |r| r.unwrap() )
-            .map( |s: &'a str| {
-                let p:CmParser<'a, '_> = CmParser::new_ext(&s, Options::empty());
-                p
-            } )
-            .collect()
-            ;
-
-        let vs:Vec<_> = ps.iter()
-            .map( |p| {
-                p.reference_definitions()
-            } )
-            .map( |rd| {
-                rd.iter().collect::<Vec<_>>()
-            } )
-            .fold(vec![], |mut c, mut v| {
-                c.append(&mut v);
-                c
-            } )
-            ;
-
-        for (key, item) in vs {
-            if map.contains_key(key) {
-                if let Some(vs) = map.get_mut(key) {
-                    vs.push(item.to_owned());
+                    }
+                },
+                b'\n' => {
+                    if let Some(ref mut range) = self.range {
+                        range.end = i;
+                    }
+                    til_end = false;
+                },
+                _ if til_end => {
+                    continue;
+                },
+                x => {
+                    println!("idx: {:?} - char: {:?}", i, str::from_utf8(&[x]).unwrap());
+                    break;
                 }
-            } else {
-                map.insert(key, vec![item.to_owned()]);
             }
         }
 
-        println!("map is {:?}", map);
+        println!("{:?}", self.range);
+        if let Some(ref mut r) = self.range {
+            println!("{:?}", str::from_utf8(&self.slice[r.start..r.end]).unwrap());
+
+        }
     }
+
+    fn parse_gray_matter(&'input mut self) -> Option<HashMap<&str, Vec<LinkDef<'_>>>> {
+        use regex::Regex;
+
+        if let Some(ref r) = self.range {
+            let gray_matter = &self.slice[r.start..r.end];
+            
+            let lines = gray_matter
+                .split(|c| c.eq(&b'\n'))
+                .map( |slice| {
+                    str::from_utf8(&slice)
+                } )
+                .filter_map(|r| r.ok())
+                ;
+
+            if let Ok(re) = Regex::new(r#"\[(?<id>[^\[\]]+)\]:\s(?<uri>[^\n"]+)("(?<title>[^"]+)")?"#) {
+                let values = lines
+                    .filter_map(|line| {
+                        if re.is_match(line) {
+                            Some(re.captures_iter(line))
+        
+                        } else {
+                            None
+                        }
+                    })
+                ;
+
+                let mut map:HashMap<&'input str, Vec<LinkDef<'input>>> = HashMap::new();
+
+                for capture in values {
+                    for value in capture {
+                        let id = value.name("id");
+                        let uri = value.name("uri");
+                        let title = value.name("title");
+                        println!("captures {:?}, {:?}, {:?}", id, uri, title);
+
+                        if let (Some(id_match), Some(uri_match)) = (id, uri) {
+                            let key = id_match.as_str();
+                            if map.contains_key(key) {
+                                if let Some(vec) = map.get_mut(key) {
+                                    vec.push(
+                                        LinkDef { 
+                                            dest: CowStr::Borrowed(uri_match.as_str()),
+                                            span: uri_match.range(), 
+                                            title: title
+                                                .map(|t| {
+                                                    CowStr::Borrowed(t.as_str())
+                                                })
+                                            }
+                                    );
+                                }
+
+                            } else {
+                                map
+                                .insert(
+                                    key, 
+                                    vec![LinkDef { 
+                                        dest: CowStr::Borrowed(uri_match.as_str()),
+                                        span: uri_match.range(), 
+                                        title: title
+                                            .map(|t| {
+                                                CowStr::Borrowed(t.as_str())
+                                            })
+                                        }]
+                                    );
+
+                            }
+                            
+                        };
+                    }
+                }
+
+                return Some(map)
+
+            }
+        }
+        None
+    }
+    
 }
