@@ -1,4 +1,4 @@
-#![allow(clippy::invalid_regex, clippy::pedantic, clippy::correctness, clippy::perf, clippy::style, clippy::restriction)]
+#![allow(clippy::pedantic, clippy::correctness, clippy::perf, clippy::style, clippy::restriction)]
 
 use std::{
     str, 
@@ -25,14 +25,16 @@ use pulldown_cmark::{
     Options,
     Parser as CmParser,
     Event,
-    html,
     Tag,
+    html,
     HeadingLevel, 
-    LinkDef,
 };
 
+use serde::Serialize;
+//use refmt_serde::{Format, Refmt};
 use clap::{Parser as CliParser, ValueEnum};
-use gray_matter::{ParsedEntity, Matter, engine::{YAML, JSON, TOML}};
+use gray_matter::{Pod, ParsedEntity, Matter, engine::{YAML, JSON, TOML}};
+use serde_derive::Deserialize;
 
 #[derive(CliParser, Debug)]
 struct Cli {
@@ -66,7 +68,7 @@ struct Cli {
     #[arg(short = 'm', long, value_enum)]
     front_matter:Option<FrontMatter>,
 
-    // TODO allow `config.{toml,json}` parsed to load the exact values above?
+    // TODO allow `config.{toml,json,yaml}` parsed to load the exact values above?
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
@@ -75,6 +77,15 @@ enum FrontMatter {
     Toml,
     Yaml,
     Refdef, // probably a better name can be thought of
+}
+
+enum PayloadFormat {
+    Json,
+    Toml,
+    Yaml,
+    Html,
+    Markdown,
+    Pickle,
 }
 
 #[tokio::main]
@@ -116,46 +127,91 @@ async fn root() -> &'static str {
 async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Response {
     println!("{:?}", path);
     
-    match SysPath::new(&path).extension() {
-        Some(x) if (x == "md") => {
-            println!("Tt's markdown");
-            if let Some(x) = commonmark_as_str(path) {
-                x.into_response()
-            } else {
-                StatusCode::NOT_FOUND.into_response()
-            }
+    let mut path = path;
+    let path_ext = SysPath::new(&path).extension();
+    let extension:Option<PayloadFormat>;
+    match path_ext {
+        Some(x) if (x == "json") => {
+            path = path.replace(".json", ".md");
+            extension = Some(PayloadFormat::Json);
+        }
+        Some(x) if (x == "toml") => {
+            path = path.replace(".toml", ".md");
+            extension = Some(PayloadFormat::Toml);
         },
+        Some(x) if (x == "yaml") => {
+            path = path.replace(".yaml", ".md");
+            extension = Some(PayloadFormat::Yaml);
+        },
+        Some(x) if (x == "pickle") => {
+            path = path.replace(".pickle", ".md");
+            extension = Some(PayloadFormat::Pickle);
+        }
         Some(x) if (x == "html") => {
-            println!("Tt's html");
-            commonmark_as_html(path, state).into_response()
+            path = path.replace(".html", ".md");
+            extension = Some(PayloadFormat::Html);
         },
-        x => {
-            println!("Not found {:?}", x);
-            StatusCode::BAD_REQUEST.into_response()
+        Some(x) if (x == "md") => {
+            extension = Some(PayloadFormat::Markdown);
+        },
+        _ => {
+            extension = None;
         }
-    }
-}
+    };
 
-fn commonmark_as_html(path:String, state:Arc<Cli>) -> Html<String> {
-    println!("html {:?}", path);
-    let path = path.replace(".html", ".md");
-    Html(parse_md(path, state))
-}
-
-fn commonmark_as_str(path:String) -> Option<String> {
-    println!("raw {:?}", path);
-    let content = fetch_md(&path);
-    if let Some(content) = content {
-        println!("loaded");
-        if let Ok(s) = str::from_utf8(&content) {
-            Some(s.to_string())
-        } else {
-            None
+    if let Some(ref extension) = extension {
+        // Handle commonmark requests early
+        match extension {
+            PayloadFormat::Markdown => {
+                return fetch_md(&path).unwrap().into_response();
+            },
+            _ => {}
         }
-        
+        if let Some(payload) = parse_to_extension(path, state) {
+            match extension {
+                PayloadFormat::Html => {
+                    return Html(payload.html).into_response();
+                },
+                PayloadFormat::Json => {
+                    return if let Ok(json) = serde_json::to_string_pretty(&payload) {
+                        json.into_response()
+
+                    } else {
+                        StatusCode::BAD_REQUEST.into_response()
+                    }
+                },
+                PayloadFormat::Yaml => {
+                    return if let Ok(yaml) = serde_yaml::to_string(&payload) {
+                        yaml.into_response()
+                    } else {
+                        StatusCode::BAD_REQUEST.into_response()
+                    }
+                },
+                PayloadFormat::Toml => {
+                    return if let Ok(toml) = toml::to_string_pretty(&payload) {
+                        toml.into_response()
+                    } else {
+                        StatusCode::BAD_REQUEST.into_response()
+                    }
+                },
+                PayloadFormat::Pickle => {
+                    return if let Ok(pickle) = serde_pickle::to_vec(&payload, Default::default()) {
+                        pickle.into_response()
+                    } else {
+                        StatusCode::BAD_REQUEST.into_response()
+                    }
+                }
+                _ => {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
+                
+            }
+
+        }
+        return StatusCode::NOT_FOUND.into_response()
+
     } else {
-        println!("failed to find");
-        None
+        StatusCode::BAD_REQUEST.into_response()
     }
 }
 
@@ -177,17 +233,14 @@ fn fetch_md(path:&String) -> Option<Vec<u8>> {
     None
 }
 
-fn parse_md(path:String, state:Arc<Cli>) -> String {
-    let cwd = env::current_dir();
-    println!("{:?}", cwd);
-    println!("{:?}", path);
+fn parse_to_extension(path:String, state:Arc<Cli>) -> Option<Payload> {
     if SysPath::new(&path).exists() {
         let buf = fetch_md(&path);
 
         if let Some(buf) = buf {
             let mut buf = &buf[..];
+            let mut pod:Pod = Pod::Null;
             let mut matter:Option<ParsedEntity> = None;
-            let mut map:HashMap<&str, Vec<LinkDef>> = HashMap::new();
             let mut refdef = RefDefMatter::new(buf);
 
             // Handle front matter with gray_matter
@@ -224,20 +277,20 @@ fn parse_md(path:String, state:Arc<Cli>) -> String {
                 },
                 Some(FrontMatter::Refdef) => {
                     println!("parse refdef");
-                    // Can not implement custom Engine, as gray_matter
-                    // needs a delimiters to work.
+                    // Would've preferred to impl custom Engine but `refdef`
+                    // doesnt have a delimiter, so just use Pod.
                     refdef.scan();
                     if let Some(m) = refdef.parse_gray_matter() {
-                        map.extend(m);
-                        //map = m;
+                        pod = m;
                     }
                 },
                 None => {}
             }
 
             if let Some(info) = &matter {
-                if let Some(_) = &info.data {
+                if let Some(p) = &info.data {
                     // update `buf` to be remaining text minus the front matter.
+                    pod = p.clone();
                     println!("{:?}", info.content);
                     buf = &info.content.as_bytes();
                 }
@@ -276,7 +329,6 @@ fn parse_md(path:String, state:Arc<Cli>) -> String {
                             (_, Event::Text(CowStr::Borrowed("in case you missed it"))),
                             (b, Event::End(Tag::Emphasis))
                         ] => {
-                            //println!("{:?}", slice);
                             finish_and_store(&mut ranges, &mut range, *b);
 
                             if range.is_none() {
@@ -287,14 +339,14 @@ fn parse_md(path:String, state:Arc<Cli>) -> String {
                             finish_and_store(&mut ranges, &mut range, *idx+1);
                         },
                         x => {
-                            println!("{:?}", x);
+                            dbg!(x);
                         }
                     }
                 }
 
                 finish_and_store(&mut ranges, &mut range, collection.last().unwrap().0+1);
 
-                println!("ranges are {:?}", ranges);
+                dbg!(&ranges);
 
                 let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len()*3) );
 
@@ -341,24 +393,24 @@ fn parse_md(path:String, state:Arc<Cli>) -> String {
 
                 }
 
-                assert!(new_collection.len() != 0);
+                assert!(new_collection.len() > 0);
                 let mut html_output = String::new();
                 html::push_html(&mut html_output,  new_collection.into_iter());
 
-                println!("{}", &html_output);
-
+                // TODO consider merging other found refdefs into map, if possible at all.
                 /*for i in md_parser.reference_definitions().iter() {
                     println!("{:?}", i);
                 }*/
-                return html_output
+
+                return Some(Payload { html: html_output, front_matter:pod.into() })
 
             }
             
         }
-        
+
     }
-    
-    "hello world ".to_owned() + &path
+
+    None
 }
 
 fn finish_and_store(rs:&mut Vec<Range<usize>>, r:&mut Option<Range<usize>>, end:usize) {
@@ -384,7 +436,8 @@ impl<'input> RefDefMatter<'input> {
 
     fn scan(&mut self) {
         // Current each refdef needs to be contained on a single line.
-        // Unlike valid commonmark, no newlines can exist between any part of a refdef.
+        // Unlike valid commonmark, no newlines can exist between any part of a refdef,
+        // it has to fit entirely on a single line.
         let mut til_end:bool = false;
 
         for i in 0..self.slice.len() {
@@ -406,20 +459,20 @@ impl<'input> RefDefMatter<'input> {
                     continue;
                 },
                 x => {
-                    println!("idx: {:?} - char: {:?}", i, str::from_utf8(&[x]).unwrap());
+                    dbg!(i, str::from_utf8(&[x]).unwrap());
                     break;
                 }
             }
         }
 
-        println!("{:?}", self.range);
+        dbg!(&self.range);
         if let Some(ref mut r) = self.range {
-            println!("{:?}", str::from_utf8(&self.slice[r.start..r.end]).unwrap());
+            dbg!(str::from_utf8(&self.slice[r.start..r.end]).unwrap());
 
         }
     }
 
-    fn parse_gray_matter(&'input mut self) -> Option<HashMap<&str, Vec<LinkDef<'_>>>> {
+    fn parse_gray_matter(&'input mut self) -> Option<Pod> {
         use regex::Regex;
 
         if let Some(ref r) = self.range {
@@ -433,7 +486,7 @@ impl<'input> RefDefMatter<'input> {
                 .filter_map(|r| r.ok())
                 ;
 
-            if let Ok(re) = Regex::new(r#"\[(?<id>[^\[\]]+)\]:\s(?<uri>[^\n"]+)("(?<title>[^"]+)")?"#) {
+            if let Ok(re) = Regex::new(r#"\[(?<id>[^\[\]]+)\]:\s(?<uri>[^\n\r"]+)("(?<title>[^"]+)")?"#) {
                 let values = lines
                     .filter_map(|line| {
                         if re.is_match(line) {
@@ -445,44 +498,66 @@ impl<'input> RefDefMatter<'input> {
                     })
                 ;
 
-                let mut map:HashMap<&'input str, Vec<LinkDef<'input>>> = HashMap::new();
+                let mut map:HashMap<String, Pod> = HashMap::new();
 
                 for capture in values {
                     for value in capture {
                         let id = value.name("id");
                         let uri = value.name("uri");
                         let title = value.name("title");
-                        println!("captures {:?}, {:?}, {:?}", id, uri, title);
+                        dbg!(id, uri, title);
 
                         if let (Some(id_match), Some(uri_match)) = (id, uri) {
                             let key = id_match.as_str();
                             if map.contains_key(key) {
-                                if let Some(vec) = map.get_mut(key) {
+                                if let Some(Pod::Array(vec)) = map.get_mut(key) {
                                     vec.push(
-                                        LinkDef { 
-                                            dest: CowStr::Borrowed(uri_match.as_str()),
-                                            span: uri_match.range(), 
-                                            title: title
-                                                .map(|t| {
-                                                    CowStr::Borrowed(t.as_str())
-                                                })
-                                            }
+                                        Pod::Hash(
+                                            [
+                                                Some(("uri".to_string(), Pod::String(uri_match.as_str().to_string()))),
+                                                if title.is_some() {
+                                                    Some(("title".to_string(), title
+                                                        .map_or(
+                                                            Pod::Null,
+                                                            |t| Pod::String(t.as_str().to_string())
+                                                        )
+                                                    ))
+                                                } else {
+                                                    None
+                                                }
+                                            ]
+                                            .into_iter()
+                                            .flatten()
+                                            .collect::<HashMap<_, _>>()
+                                        )
                                     );
                                 }
 
                             } else {
                                 map
                                 .insert(
-                                    key, 
-                                    vec![LinkDef { 
-                                        dest: CowStr::Borrowed(uri_match.as_str()),
-                                        span: uri_match.range(), 
-                                        title: title
-                                            .map(|t| {
-                                                CowStr::Borrowed(t.as_str())
-                                            })
-                                        }]
-                                    );
+                                    key.to_string(), 
+                                    Pod::Array(vec![
+                                        Pod::Hash(
+                                            [
+                                                Some(("uri".to_string(), Pod::String(uri_match.as_str().to_string()))),
+                                                if title.is_some() {
+                                                    Some(("title".to_string(), title
+                                                        .map_or(
+                                                            Pod::Null,
+                                                            |t| Pod::String(t.as_str().to_string())
+                                                        )
+                                                    ))
+                                                } else {
+                                                    None
+                                                }
+                                            ]
+                                            .into_iter()
+                                            .flatten()
+                                            .collect::<HashMap<_, _>>()
+                                        )
+                                    ])
+                                );
 
                             }
                             
@@ -490,11 +565,17 @@ impl<'input> RefDefMatter<'input> {
                     }
                 }
 
-                return Some(map)
+                return Some(Pod::Hash(map))
 
             }
         }
         None
     }
     
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Payload {
+    front_matter:serde_json::Value,
+    html:String,
 }
