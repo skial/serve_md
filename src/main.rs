@@ -31,7 +31,6 @@ use pulldown_cmark::{
 };
 
 use serde::Serialize;
-//use refmt_serde::{Format, Refmt};
 use regex::Match;
 use clap::{Parser as CliParser, ValueEnum};
 use gray_matter::{Pod, ParsedEntity, Matter, engine::{YAML, JSON, TOML}};
@@ -101,7 +100,7 @@ async fn main() {
         }
     }
 
-    println!("{:?}", cli);
+    dbg!(&cli);
 
     let state = Arc::new(cli);
     
@@ -127,7 +126,7 @@ async fn root() -> &'static str {
 }
 
 async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> {
-    println!("{:?}", path);
+    dbg!(&path);
     
     let mut path = path;
     let path_ext = SysPath::new(&path).extension();
@@ -159,13 +158,13 @@ async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> 
         _ => {
             extension = None;
         }
-    };
+    }
 
     if let Some(ref extension) = extension {
         // Handle commonmark requests early
         if extension == &PayloadFormat::Markdown {
             return fetch_md(&path).map(|v| v.into_response())
-        };
+        }
         let payload = parse_to_extension(path, state)?;
         match extension {
             PayloadFormat::Html => {
@@ -200,7 +199,7 @@ async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> 
 }
 
 fn fetch_md(path:&String) -> Result<Vec<u8>> {
-    // limit paths to resolve to cwd or its children.
+    // TODO limit paths to resolve to cwd or its children.
     //let cwd = env::current_dir();
     let path = SysPath::new(&path);
     if path.exists() {
@@ -226,36 +225,36 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
         match state.front_matter {
             Some(FrontMatter::Yaml) => {
                 if let Ok(s) = str::from_utf8(&buf) {
-                    println!("parse yaml");
+                    dbg!("parse yaml");
                     let m = Matter::<YAML>::new();
                     matter = Some(m.parse(s));
 
                 } else {
-                    println!("error yaml");
+                    dbg!("error yaml");
                 }
             },
             Some(FrontMatter::Json) => {
                 if let Ok(s) = str::from_utf8(&buf) {
-                    println!("parse json");
+                    dbg!("parse json");
                     let m = Matter::<JSON>::new();
                     matter = Some(m.parse(s));
 
                 } else {
-                    println!("error json");
+                    dbg!("error json");
                 }
             },
             Some(FrontMatter::Toml) => {
                 if let Ok(s) = str::from_utf8(&buf) {
-                    println!("parse toml");
+                    dbg!("parse toml");
                     let m = Matter::<TOML>::new();
                     matter = Some(m.parse(s));
 
                 } else {
-                    println!("error toml");
+                    dbg!("error toml");
                 }
             },
             Some(FrontMatter::Refdef) => {
-                println!("parse refdef");
+                dbg!("parse refdef");
                 // Would've preferred to impl custom Engine but `refdef`
                 // doesnt have a delimiter, so just use Pod.
                 refdef.scan();
@@ -270,7 +269,7 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
             if let Some(p) = &info.data {
                 // update `buf` to be remaining text minus the front matter.
                 pod = p.clone();
-                println!("{:?}", info.content);
+                dbg!(&info.content);
                 buf = &info.content.as_bytes();
             }
         }
