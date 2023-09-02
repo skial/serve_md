@@ -217,7 +217,6 @@ fn fetch_md(path:&String) -> Result<Vec<u8>> {
 fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
     if SysPath::new(&path).exists() {
         let buf = fetch_md(&path)?;
-
         let mut buf = &buf[..];
         let mut pod:Pod = Pod::Null;
         let mut matter:Option<ParsedEntity> = None;
@@ -227,8 +226,6 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
         match state.front_matter {
             Some(FrontMatter::Yaml) => {
                 if let Ok(s) = str::from_utf8(&buf) {
-                    #[cfg(debug_assertions)]
-                    dbg!("parse yaml");
                     let m = Matter::<YAML>::new();
                     matter = Some(m.parse(s));
 
@@ -239,8 +236,6 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
             },
             Some(FrontMatter::Json) => {
                 if let Ok(s) = str::from_utf8(&buf) {
-                    #[cfg(debug_assertions)]
-                    dbg!("parse json");
                     let m = Matter::<JSON>::new();
                     matter = Some(m.parse(s));
 
@@ -251,8 +246,6 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
             },
             Some(FrontMatter::Toml) => {
                 if let Ok(s) = str::from_utf8(&buf) {
-                    #[cfg(debug_assertions)]
-                    dbg!("parse toml");
                     let m = Matter::<TOML>::new();
                     matter = Some(m.parse(s));
 
@@ -262,8 +255,6 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
                 }
             },
             Some(FrontMatter::Refdef) => {
-                #[cfg(debug_assertions)]
-                dbg!("parse refdef");
                 // Would've preferred to impl custom Engine but `refdef`
                 // doesnt have a delimiter, so just use Pod.
                 refdef.scan();
@@ -330,10 +321,7 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
                     [(idx, Event::Start(Tag::Heading(_, _, _))), _] if range.is_some() => {
                         finish_and_store(&mut ranges, &mut range, *idx+1);
                     },
-                    x => {
-                        #[cfg(debug_assertions)]
-                        dbg!(x);
-                    }
+                    _ => {}
                 }
             }
 
