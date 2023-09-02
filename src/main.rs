@@ -100,6 +100,7 @@ async fn main() {
         }
     }
 
+    #[cfg(debug_assertions)]
     dbg!(&cli);
 
     let state = Arc::new(cli);
@@ -126,6 +127,7 @@ async fn root() -> &'static str {
 }
 
 async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> {
+    #[cfg(debug_assertions)]
     dbg!(&path);
     
     let mut path = path;
@@ -225,35 +227,42 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
         match state.front_matter {
             Some(FrontMatter::Yaml) => {
                 if let Ok(s) = str::from_utf8(&buf) {
+                    #[cfg(debug_assertions)]
                     dbg!("parse yaml");
                     let m = Matter::<YAML>::new();
                     matter = Some(m.parse(s));
 
                 } else {
+                    #[cfg(debug_assertions)]
                     dbg!("error yaml");
                 }
             },
             Some(FrontMatter::Json) => {
                 if let Ok(s) = str::from_utf8(&buf) {
+                    #[cfg(debug_assertions)]
                     dbg!("parse json");
                     let m = Matter::<JSON>::new();
                     matter = Some(m.parse(s));
 
                 } else {
+                    #[cfg(debug_assertions)]
                     dbg!("error json");
                 }
             },
             Some(FrontMatter::Toml) => {
                 if let Ok(s) = str::from_utf8(&buf) {
+                    #[cfg(debug_assertions)]
                     dbg!("parse toml");
                     let m = Matter::<TOML>::new();
                     matter = Some(m.parse(s));
 
                 } else {
+                    #[cfg(debug_assertions)]
                     dbg!("error toml");
                 }
             },
             Some(FrontMatter::Refdef) => {
+                #[cfg(debug_assertions)]
                 dbg!("parse refdef");
                 // Would've preferred to impl custom Engine but `refdef`
                 // doesnt have a delimiter, so just use Pod.
@@ -269,6 +278,7 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
             if let Some(p) = &info.data {
                 // update `buf` to be remaining text minus the front matter.
                 pod = p.clone();
+                #[cfg(debug_assertions)]
                 dbg!(&info.content);
                 buf = &info.content.as_bytes();
             }
@@ -321,6 +331,7 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
                         finish_and_store(&mut ranges, &mut range, *idx+1);
                     },
                     x => {
+                        #[cfg(debug_assertions)]
                         dbg!(x);
                     }
                 }
@@ -328,6 +339,7 @@ fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
 
             finish_and_store(&mut ranges, &mut range, collection.last().unwrap().0+1);
 
+            #[cfg(debug_assertions)]
             dbg!(&ranges);
 
             let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len()*3) );
@@ -443,13 +455,16 @@ impl<'input> RefDefMatter<'input> {
                     continue;
                 },
                 x => {
+                    #[cfg(debug_assertions)]
                     dbg!(i, str::from_utf8(&[x]).unwrap());
                     break;
                 }
             }
         }
 
+        #[cfg(debug_assertions)]
         dbg!(&self.range);
+        #[cfg(debug_assertions)]
         if let Some(ref mut r) = self.range {
             dbg!(str::from_utf8(&self.slice[r.start..r.end]).unwrap());
 
@@ -502,6 +517,7 @@ impl<'input> RefDefMatter<'input> {
                     let uri = uri.unwrap();
                     let title = values.2;
                     
+                    #[cfg(debug_assertions)]
                     dbg!(id, uri, title);
                     let key = id.as_str();
                     if let Some(Pod::Array(vec)) = map.get_mut(key) {
