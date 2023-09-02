@@ -163,34 +163,28 @@ async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> 
     }
 
     if let Some(ref extension) = extension {
+        use PayloadFormat as PF;
+
         // Handle commonmark requests early
         if extension == &PayloadFormat::Markdown {
             return fetch_md(&path).map(|v| v.into_response())
         }
         let payload = parse_to_extension(path, state)?;
         match extension {
-            PayloadFormat::Html => {
+            PF::Html => {
                 return Ok(Html(payload.html).into_response());
             },
-            PayloadFormat::Json => {
-                if let Ok(json) = serde_json::to_string_pretty(&payload) {
-                    return Ok(json.into_response())
-                }
-            },
-            PayloadFormat::Yaml => {
-                if let Ok(yaml) = serde_yaml::to_string(&payload) {
-                    return Ok(yaml.into_response())
-                }
-            },
-            PayloadFormat::Toml => {
-                if let Ok(toml) = toml::to_string_pretty(&payload) {
-                    return Ok(toml.into_response())
-                }
-            },
-            PayloadFormat::Pickle => {
-                if let Ok(pickle) = serde_pickle::to_vec(&payload, Default::default()) {
-                    return Ok(pickle.into_response())
-                }
+            PF::Json => if let Ok(json) = serde_json::to_string_pretty(&payload) {
+                return Ok(json.into_response())
+            }
+            PF::Yaml => if let Ok(yaml) = serde_yaml::to_string(&payload) {
+                return Ok(yaml.into_response())
+            }
+            PF::Toml => if let Ok(toml) = toml::to_string_pretty(&payload) {
+                return Ok(toml.into_response())
+            }
+            PF::Pickle => if let Ok(pickle) = serde_pickle::to_vec(&payload, Default::default()) {
+                return Ok(pickle.into_response())
             }
             _ => {}
             
