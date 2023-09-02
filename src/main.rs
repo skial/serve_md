@@ -17,7 +17,7 @@ use axum::{
     routing::get, 
     extract::Path, 
     http::StatusCode, 
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Response, Result},
 };
 
 use pulldown_cmark::{
@@ -32,6 +32,7 @@ use pulldown_cmark::{
 
 use serde::Serialize;
 //use refmt_serde::{Format, Refmt};
+use regex::Match;
 use clap::{Parser as CliParser, ValueEnum};
 use gray_matter::{Pod, ParsedEntity, Matter, engine::{YAML, JSON, TOML}};
 use serde_derive::Deserialize;
@@ -79,6 +80,7 @@ enum FrontMatter {
     Refdef, // probably a better name can be thought of
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum PayloadFormat {
     Json,
     Toml,
@@ -124,7 +126,7 @@ async fn root() -> &'static str {
     "hello world _"
 }
 
-async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Response {
+async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> {
     println!("{:?}", path);
     
     let mut path = path;
@@ -161,256 +163,239 @@ async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Response {
 
     if let Some(ref extension) = extension {
         // Handle commonmark requests early
+        if extension == &PayloadFormat::Markdown {
+            return fetch_md(&path).map(|v| v.into_response())
+        };
+        let payload = parse_to_extension(path, state)?;
         match extension {
-            PayloadFormat::Markdown => {
-                return fetch_md(&path).unwrap().into_response();
+            PayloadFormat::Html => {
+                return Ok(Html(payload.html).into_response());
             },
+            PayloadFormat::Json => {
+                if let Ok(json) = serde_json::to_string_pretty(&payload) {
+                    return Ok(json.into_response())
+                }
+            },
+            PayloadFormat::Yaml => {
+                if let Ok(yaml) = serde_yaml::to_string(&payload) {
+                    return Ok(yaml.into_response())
+                }
+            },
+            PayloadFormat::Toml => {
+                if let Ok(toml) = toml::to_string_pretty(&payload) {
+                    return Ok(toml.into_response())
+                }
+            },
+            PayloadFormat::Pickle => {
+                if let Ok(pickle) = serde_pickle::to_vec(&payload, Default::default()) {
+                    return Ok(pickle.into_response())
+                }
+            }
             _ => {}
-        }
-        if let Some(payload) = parse_to_extension(path, state) {
-            match extension {
-                PayloadFormat::Html => {
-                    return Html(payload.html).into_response();
-                },
-                PayloadFormat::Json => {
-                    return if let Ok(json) = serde_json::to_string_pretty(&payload) {
-                        json.into_response()
-
-                    } else {
-                        StatusCode::BAD_REQUEST.into_response()
-                    }
-                },
-                PayloadFormat::Yaml => {
-                    return if let Ok(yaml) = serde_yaml::to_string(&payload) {
-                        yaml.into_response()
-                    } else {
-                        StatusCode::BAD_REQUEST.into_response()
-                    }
-                },
-                PayloadFormat::Toml => {
-                    return if let Ok(toml) = toml::to_string_pretty(&payload) {
-                        toml.into_response()
-                    } else {
-                        StatusCode::BAD_REQUEST.into_response()
-                    }
-                },
-                PayloadFormat::Pickle => {
-                    return if let Ok(pickle) = serde_pickle::to_vec(&payload, Default::default()) {
-                        pickle.into_response()
-                    } else {
-                        StatusCode::BAD_REQUEST.into_response()
-                    }
-                }
-                _ => {
-                    return StatusCode::NOT_FOUND.into_response();
-                }
-                
-            }
-
-        }
-        return StatusCode::NOT_FOUND.into_response()
-
-    } else {
-        StatusCode::BAD_REQUEST.into_response()
-    }
-}
-
-fn fetch_md(path:&String) -> Option<Vec<u8>> {
-    let cwd = env::current_dir();
-    println!("{:?}", cwd);
-    println!("{:?}", path);
-    let path = SysPath::new(&path);
-    if path.exists() {
-        let file = File::open(path);
-
-        if let Ok(mut f) = file {
-            let mut buf = vec![];
-            let _ = f.read_to_end(&mut buf);
-            return Some(buf);
-        }
-    }
-
-    None
-}
-
-fn parse_to_extension(path:String, state:Arc<Cli>) -> Option<Payload> {
-    if SysPath::new(&path).exists() {
-        let buf = fetch_md(&path);
-
-        if let Some(buf) = buf {
-            let mut buf = &buf[..];
-            let mut pod:Pod = Pod::Null;
-            let mut matter:Option<ParsedEntity> = None;
-            let mut refdef = RefDefMatter::new(buf);
-
-            // Handle front matter with gray_matter
-            match state.front_matter {
-                Some(FrontMatter::Yaml) => {
-                    if let Ok(s) = str::from_utf8(&buf) {
-                        println!("parse yaml");
-                        let m = Matter::<YAML>::new();
-                        matter = Some(m.parse(s));
-
-                    } else {
-                        println!("error yaml");
-                    }
-                },
-                Some(FrontMatter::Json) => {
-                    if let Ok(s) = str::from_utf8(&buf) {
-                        println!("parse json");
-                        let m = Matter::<JSON>::new();
-                        matter = Some(m.parse(s));
-
-                    } else {
-                        println!("error json");
-                    }
-                },
-                Some(FrontMatter::Toml) => {
-                    if let Ok(s) = str::from_utf8(&buf) {
-                        println!("parse toml");
-                        let m = Matter::<TOML>::new();
-                        matter = Some(m.parse(s));
-
-                    } else {
-                        println!("error toml");
-                    }
-                },
-                Some(FrontMatter::Refdef) => {
-                    println!("parse refdef");
-                    // Would've preferred to impl custom Engine but `refdef`
-                    // doesnt have a delimiter, so just use Pod.
-                    refdef.scan();
-                    if let Some(m) = refdef.parse_gray_matter() {
-                        pod = m;
-                    }
-                },
-                None => {}
-            }
-
-            if let Some(info) = &matter {
-                if let Some(p) = &info.data {
-                    // update `buf` to be remaining text minus the front matter.
-                    pod = p.clone();
-                    println!("{:?}", info.content);
-                    buf = &info.content.as_bytes();
-                }
-            }
-
-            let mut md_opt = Options::empty();
-            if state.tables {
-                md_opt.insert(Options::ENABLE_TABLES);
-            }
-            if state.footnotes {
-                md_opt.insert(Options::ENABLE_FOOTNOTES);
-            }
-            if state.strikethrough {
-                md_opt.insert(Options::ENABLE_STRIKETHROUGH);
-            }
-            if state.smart_punctuation {
-                md_opt.insert(Options::ENABLE_SMART_PUNCTUATION);
-            }
-            if state.header_attributes {
-                md_opt.insert(Options::ENABLE_HEADING_ATTRIBUTES);
-            }
-
-            if let Ok(s) = str::from_utf8(&buf) {
-                let mut md_parser = CmParser::new_ext(s, md_opt);
-
-                let mut ranges:Vec<Range<usize>> = Vec::new();
-                let mut range:Option<Range<usize>> = None;
-                let collection:Vec<_> = (0..).zip(&mut md_parser).collect();
-                let collection = collection.as_slice();
-
-                for slice in collection.windows(4) {
-                    match slice {
-                        [
-                            (a, Event::Start(Tag::Heading(HeadingLevel::H5, _, _))), 
-                            (_, Event::Start(Tag::Emphasis)),
-                            (_, Event::Text(CowStr::Borrowed("in case you missed it"))),
-                            (b, Event::End(Tag::Emphasis))
-                        ] => {
-                            finish_and_store(&mut ranges, &mut range, *b);
-
-                            if range.is_none() {
-                                range = Some(*a..*b);
-                            }
-                        },
-                        [(idx, Event::Start(Tag::Heading(_, _, _))), _] if range.is_some() => {
-                            finish_and_store(&mut ranges, &mut range, *idx+1);
-                        },
-                        x => {
-                            dbg!(x);
-                        }
-                    }
-                }
-
-                finish_and_store(&mut ranges, &mut range, collection.last().unwrap().0+1);
-
-                dbg!(&ranges);
-
-                let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len()*3) );
-
-                if !ranges.is_empty() {
-                    let Some(range) = ranges.pop() else {
-                        panic!("`ranges` should not be empty at this point.");
-                    };
-
-                    let mut i:usize = 0;
-
-                    while i < collection.len() {
-                        let pair = &collection[i];
-                        if !range.contains(&pair.0) {
-                            new_collection.push(pair.1.to_owned());
-                            i += 1;
-                            continue;
-                        }
-
-                        new_collection.push(Event::Html(CowStr::Borrowed("<details open>")));
-                        new_collection.push(Event::SoftBreak);
-                        new_collection.push(Event::Html(CowStr::Borrowed("<summary>")));
-                        let mut iter = range
-                            .clone()
-                            // skip the open h5 tag
-                            .skip(1);
-                        new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
-                        new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
-                        new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
-                        new_collection.push(Event::Html(CowStr::Borrowed("</summary>")));
-                        iter
-                            // skip the end h5 tag
-                            .skip(1)
-                            .for_each(|ridx| {
-                                let (_, e) = &collection[ridx];
-                                new_collection.push( e.to_owned() );
-                            });
-                        new_collection.push(Event::Html(CowStr::Borrowed("</details>")));
-
-                        i += range.len();
-
-                    }
-                } else {
-                    new_collection.extend(collection.iter().map(|c| c.1.to_owned()));
-
-                }
-
-                assert!(new_collection.len() > 0);
-                let mut html_output = String::new();
-                html::push_html(&mut html_output,  new_collection.into_iter());
-
-                // TODO consider merging other found refdefs into map, if possible at all.
-                /*for i in md_parser.reference_definitions().iter() {
-                    println!("{:?}", i);
-                }*/
-
-                return Some(Payload { html: html_output, front_matter:pod.into() })
-
-            }
             
         }
 
     }
+    Err(StatusCode::BAD_REQUEST.into())
+}
 
-    None
+fn fetch_md(path:&String) -> Result<Vec<u8>> {
+    // limit paths to resolve to cwd or its children.
+    //let cwd = env::current_dir();
+    let path = SysPath::new(&path);
+    if path.exists() {
+        let mut file = File::open(path).map_err(|_| StatusCode::NOT_FOUND)?;
+        let mut buf = vec![];
+        let _ = file.read_to_end(&mut buf);
+        return Ok(buf);
+    }
+
+    Err(StatusCode::NOT_FOUND.into())
+}
+
+fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
+    if SysPath::new(&path).exists() {
+        let buf = fetch_md(&path)?;
+
+        let mut buf = &buf[..];
+        let mut pod:Pod = Pod::Null;
+        let mut matter:Option<ParsedEntity> = None;
+        let mut refdef = RefDefMatter::new(buf);
+
+        // Handle front matter with `gray_matter`
+        match state.front_matter {
+            Some(FrontMatter::Yaml) => {
+                if let Ok(s) = str::from_utf8(&buf) {
+                    println!("parse yaml");
+                    let m = Matter::<YAML>::new();
+                    matter = Some(m.parse(s));
+
+                } else {
+                    println!("error yaml");
+                }
+            },
+            Some(FrontMatter::Json) => {
+                if let Ok(s) = str::from_utf8(&buf) {
+                    println!("parse json");
+                    let m = Matter::<JSON>::new();
+                    matter = Some(m.parse(s));
+
+                } else {
+                    println!("error json");
+                }
+            },
+            Some(FrontMatter::Toml) => {
+                if let Ok(s) = str::from_utf8(&buf) {
+                    println!("parse toml");
+                    let m = Matter::<TOML>::new();
+                    matter = Some(m.parse(s));
+
+                } else {
+                    println!("error toml");
+                }
+            },
+            Some(FrontMatter::Refdef) => {
+                println!("parse refdef");
+                // Would've preferred to impl custom Engine but `refdef`
+                // doesnt have a delimiter, so just use Pod.
+                refdef.scan();
+                if let Some(m) = refdef.parse_gray_matter() {
+                    pod = m;
+                }
+            },
+            None => {}
+        }
+
+        if let Some(info) = &matter {
+            if let Some(p) = &info.data {
+                // update `buf` to be remaining text minus the front matter.
+                pod = p.clone();
+                println!("{:?}", info.content);
+                buf = &info.content.as_bytes();
+            }
+        }
+
+        let mut md_opt = Options::empty();
+        if state.tables {
+            md_opt.insert(Options::ENABLE_TABLES);
+        }
+        if state.footnotes {
+            md_opt.insert(Options::ENABLE_FOOTNOTES);
+        }
+        if state.strikethrough {
+            md_opt.insert(Options::ENABLE_STRIKETHROUGH);
+        }
+        if state.smart_punctuation {
+            md_opt.insert(Options::ENABLE_SMART_PUNCTUATION);
+        }
+        if state.header_attributes {
+            md_opt.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+        }
+
+        return if let Ok(s) = str::from_utf8(&buf) {
+            let mut md_parser = CmParser::new_ext(s, md_opt);
+
+            let mut ranges:Vec<Range<usize>> = Vec::new();
+            let mut range:Option<Range<usize>> = None;
+            let collection:Vec<_> = (0..).zip(&mut md_parser).collect();
+            let collection = collection.as_slice();
+
+            // This is custom to haxe roundup markdown files. 
+            // TODO
+            // make this redirect to external program, window size as cli option
+            // and registered program returns serialized changes.
+            for slice in collection.windows(4) {
+                match slice {
+                    [
+                        (a, Event::Start(Tag::Heading(HeadingLevel::H5, _, _))), 
+                        (_, Event::Start(Tag::Emphasis)),
+                        (_, Event::Text(CowStr::Borrowed("in case you missed it"))),
+                        (b, Event::End(Tag::Emphasis))
+                    ] => {
+                        finish_and_store(&mut ranges, &mut range, *b);
+
+                        if range.is_none() {
+                            range = Some(*a..*b);
+                        }
+                    },
+                    [(idx, Event::Start(Tag::Heading(_, _, _))), _] if range.is_some() => {
+                        finish_and_store(&mut ranges, &mut range, *idx+1);
+                    },
+                    x => {
+                        dbg!(x);
+                    }
+                }
+            }
+
+            finish_and_store(&mut ranges, &mut range, collection.last().unwrap().0+1);
+
+            dbg!(&ranges);
+
+            let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len()*3) );
+
+            if !ranges.is_empty() {
+                let Some(range) = ranges.pop() else {
+                    panic!("`ranges` should not be empty at this point.");
+                };
+
+                let mut i:usize = 0;
+
+                while i < collection.len() {
+                    let pair = &collection[i];
+                    if !range.contains(&pair.0) {
+                        new_collection.push(pair.1.to_owned());
+                        i += 1;
+                        continue;
+                    }
+
+                    new_collection.push(Event::Html(CowStr::Borrowed("<details open>")));
+                    new_collection.push(Event::SoftBreak);
+                    new_collection.push(Event::Html(CowStr::Borrowed("<summary>")));
+                    let mut iter = range
+                        .clone()
+                        // skip the open h5 tag
+                        .skip(1);
+                    new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
+                    new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
+                    new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
+                    new_collection.push(Event::Html(CowStr::Borrowed("</summary>")));
+                    iter
+                        // skip the end h5 tag
+                        .skip(1)
+                        .for_each(|ridx| {
+                            let (_, e) = &collection[ridx];
+                            new_collection.push( e.to_owned() );
+                        });
+                    new_collection.push(Event::Html(CowStr::Borrowed("</details>")));
+
+                    i += range.len();
+
+                }
+            } else {
+                new_collection.extend(collection.iter().map(|c| c.1.to_owned()));
+
+            }
+
+            assert!(new_collection.len() > 0);
+            let mut html_output = String::new();
+            html::push_html(&mut html_output,  new_collection.into_iter());
+
+            // TODO consider merging other found refdefs into map, if possible at all.
+            /*for i in md_parser.reference_definitions().iter() {
+                println!("{:?}", i);
+            }*/
+
+            Ok(Payload { html: html_output, front_matter:pod.into() })
+
+        } else {
+            // Utf8Error
+            Err(StatusCode::NO_CONTENT.into())
+        }
+
+    }
+
+    Err(StatusCode::NOT_FOUND.into())
+
 }
 
 fn finish_and_store(rs:&mut Vec<Range<usize>>, r:&mut Option<Range<usize>>, end:usize) {
@@ -476,100 +461,92 @@ impl<'input> RefDefMatter<'input> {
         use regex::Regex;
 
         if let Some(ref r) = self.range {
+            // Currently confused why removing `gray_matter` & `lines`, merging
+            // into a single iterator causes the inferred type to change & fail
+            // type checking. What changes when assigning vs a long iter chain?
             let gray_matter = &self.slice[r.start..r.end];
             
             let lines = gray_matter
-                .split(|c| c.eq(&b'\n'))
-                .map( |slice| {
-                    str::from_utf8(&slice)
-                } )
-                .filter_map(|r| r.ok())
-                ;
+            .split(|c| c.eq(&b'\n'))
+            .map( |slice| str::from_utf8(&slice) )
+            .filter_map(|r| r.ok());
 
+            // It would be nice to have regex syntax highlighting & compile time
+            // checks to make sure its valid. Clippy? cargo extension?? IDE extension???
             if let Ok(re) = Regex::new(r#"\[(?<id>[^\[\]]+)\]:\s(?<uri>[^\n\r"]+)("(?<title>[^"]+)")?"#) {
-                let values = lines
-                    .filter_map(|line| {
-                        if re.is_match(line) {
-                            Some(re.captures_iter(line))
-        
-                        } else {
-                            None
-                        }
-                    })
-                ;
-
                 let mut map:HashMap<String, Pod> = HashMap::new();
 
-                for capture in values {
-                    for value in capture {
-                        let id = value.name("id");
-                        let uri = value.name("uri");
-                        let title = value.name("title");
-                        dbg!(id, uri, title);
-
-                        if let (Some(id_match), Some(uri_match)) = (id, uri) {
-                            let key = id_match.as_str();
-                            if map.contains_key(key) {
-                                if let Some(Pod::Array(vec)) = map.get_mut(key) {
-                                    vec.push(
-                                        Pod::Hash(
-                                            [
-                                                Some(("uri".to_string(), Pod::String(uri_match.as_str().to_string()))),
-                                                if title.is_some() {
-                                                    Some(("title".to_string(), title
-                                                        .map_or(
-                                                            Pod::Null,
-                                                            |t| Pod::String(t.as_str().to_string())
-                                                        )
-                                                    ))
-                                                } else {
-                                                    None
-                                                }
-                                            ]
-                                            .into_iter()
-                                            .flatten()
-                                            .collect::<HashMap<_, _>>()
-                                        )
-                                    );
-                                }
-
-                            } else {
-                                map
-                                .insert(
-                                    key.to_string(), 
-                                    Pod::Array(vec![
-                                        Pod::Hash(
-                                            [
-                                                Some(("uri".to_string(), Pod::String(uri_match.as_str().to_string()))),
-                                                if title.is_some() {
-                                                    Some(("title".to_string(), title
-                                                        .map_or(
-                                                            Pod::Null,
-                                                            |t| Pod::String(t.as_str().to_string())
-                                                        )
-                                                    ))
-                                                } else {
-                                                    None
-                                                }
-                                            ]
-                                            .into_iter()
-                                            .flatten()
-                                            .collect::<HashMap<_, _>>()
-                                        )
-                                    ])
-                                );
-
-                            }
-                            
-                        };
+                lines
+                .filter_map(|line| {
+                    if re.is_match(line) {
+                        Some(re.captures_iter(line))
+    
+                    } else {
+                        None
                     }
-                }
+                })
+                .flatten()
+                .map( |value| {
+                    let id = value.name("id");
+                    let uri = value.name("uri");
+                    let title = value.name("title");
+                    (id, uri, title)
+                } )
+                .for_each(|values| {
+                    let id = values.0;
+                    let uri = values.1;
+
+                    if id.is_none() || uri.is_none() {
+                        return;
+                    }
+                    let id = id.unwrap();
+                    let uri = uri.unwrap();
+                    let title = values.2;
+                    
+                    dbg!(id, uri, title);
+                    let key = id.as_str();
+                    if let Some(Pod::Array(vec)) = map.get_mut(key) {
+                        vec.push(
+                            Pod::Hash(RefDefMatter::regex_to_hash_entries(uri, title))
+                        );
+
+                    } else {
+                        map
+                        .insert(
+                            key.to_string(), 
+                            Pod::Array(
+                                vec![Pod::Hash(RefDefMatter::regex_to_hash_entries(uri, title))]
+                            )
+                        );
+
+                    }
+                } );
 
                 return Some(Pod::Hash(map))
 
             }
         }
+
         None
+    }
+
+    fn regex_to_hash_entries(uri:Match, title:Option<Match>) -> HashMap<String, Pod> {
+        [
+            Some(("uri".to_string(), Pod::String(uri.as_str().to_string()))),
+            if title.is_some() {
+                Some(("title".to_string(), title
+                    .map_or(
+                        Pod::Null,
+                        |t| Pod::String(t.as_str().to_string())
+                    )
+                ))
+            } else {
+                None
+            }
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<HashMap<_, _>>()
     }
     
 }
