@@ -247,8 +247,6 @@ async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> 
 }
 
 fn fetch_md(path:&String) -> Result<Vec<u8>> {
-    // TODO limit paths to resolve to cwd or its children.
-    //let cwd = env::current_dir();
     let path = SysPath::new(&path);
     if path.exists() {
         let mut file = File::open(path).map_err(|_| StatusCode::NOT_FOUND)?;
