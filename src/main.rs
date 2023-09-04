@@ -77,6 +77,42 @@ struct Cli {
     config:Option<String>,
 }
 
+impl Cli {
+    fn load_config(&mut self) {
+        if let Some(config) = &self.config {
+            let path = SysPath::new(&config);
+            let valid_ext = path.extension()
+            .and_then(|s| s.to_str())
+            .and_then(|s| PayloadFormat::try_from(s).ok())
+            .filter(|s| [PayloadFormat::Json, PayloadFormat::Yaml, PayloadFormat::Toml].contains(s));
+            if valid_ext.is_some() && path.exists() {
+                if let Ok(mut file) = File::open(path) {
+                    let mut buf = String::new();
+                    let _ = file.read_to_string(&mut buf);
+                    match Cli::try_from((buf.as_str(), valid_ext.unwrap())) {
+                        Ok(ncli) => *self = ncli,
+                        _ => {}
+                    }
+                } // TODO handle error
+                
+            }
+        }
+    }
+
+    fn set_missing(&mut self) {
+        if self.port == 0 {
+            self.port = 8083;
+        }
+        if self.root.is_none() {
+            if let Ok(path) = env::current_dir() {
+                if let Some(path) = path.to_str() {
+                    self.root = Some(path.to_string());
+                }
+            }
+        }
+    }
+}
+
 impl TryFrom<(&str, PayloadFormat)> for Cli {
     type Error = anyhow::Error;
     fn try_from(value: (&str, PayloadFormat)) -> std::result::Result<Self, Self::Error> {
@@ -142,39 +178,8 @@ impl Display for PayloadFormat {
 #[tokio::main]
 async fn main() {
     let mut cli = Cli::parse();
-
-    if let Some(config) = &cli.config {
-        let path = SysPath::new(&config);
-        let valid_ext = path.extension()
-        .and_then(|s| s.to_str())
-        .and_then(|s| PayloadFormat::try_from(s).ok())
-        .filter(|s| [PayloadFormat::Json, PayloadFormat::Yaml, PayloadFormat::Toml].contains(s));
-        if valid_ext.is_some() && path.exists() {
-            if let Ok(mut file) = File::open(path) {
-                let mut buf = String::new();
-                let _ = file.read_to_string(&mut buf);
-                match Cli::try_from((buf.as_str(), valid_ext.unwrap())) {
-                    Ok(ncli) => cli = ncli,
-                    // Error should never be received here,
-                    // due to `valid_ext` chain.
-                    //Err(x) => panic!("{}", x),
-                    _ => {}
-                }
-            } // TODO handle error
-            
-        }
-    }
-
-    if cli.port == 0 {
-        cli.port = 8083;
-    }
-    if cli.root.is_none() {
-        if let Ok(path) = env::current_dir() {
-            if let Some(path) = path.to_str() {
-                cli.root = Some(path.to_string());
-            }
-        }
-    }
+    cli.load_config();
+    cli.set_missing();
 
     #[cfg(debug_assertions)]
     dbg!(&cli);
