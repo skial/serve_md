@@ -3,13 +3,14 @@
 use std::{
     str, 
     env,
-    sync::Arc,
     fs::File, 
     io::Read, 
+    sync::Arc,
     ops::Range, 
+    fmt::Display,
     net::SocketAddr,
-    path::Path as SysPath, 
-    collections::HashMap,
+    collections::HashMap, 
+    path::{Path as SysPath, PathBuf}, 
 };
 
 use axum::{ 
@@ -30,17 +31,19 @@ use pulldown_cmark::{
     HeadingLevel, 
 };
 
-use serde::Serialize;
 use regex::Match;
+use serde::Serialize;
+use anyhow::anyhow;
+use serde_derive::Deserialize;
 use clap::{Parser as CliParser, ValueEnum};
 use gray_matter::{Pod, ParsedEntity, Matter, engine::{YAML, JSON, TOML}};
-use serde_derive::Deserialize;
 
-#[derive(CliParser, Debug)]
+#[derive(Debug, CliParser, Deserialize, Serialize)]
+#[serde(default = "Cli::default")]
 struct Cli {
     /// Set the root directory to search & serve .md files from.
     #[arg(long)]
-    dir:Option<String>,
+    root:Option<String>,
     /// The port to bind the serve_md server too.
     #[arg(long, default_value_t = 8083)]
     port:u16,
@@ -68,10 +71,46 @@ struct Cli {
     #[arg(short = 'm', long, value_enum)]
     front_matter:Option<FrontMatter>,
 
-    // TODO allow `config.{toml,json,yaml}` parsed to load the exact values above?
+    /// Use a configuration file instead.
+    #[arg(short, long)]
+    #[serde(skip)]
+    config:Option<String>,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+impl Default for Cli {
+    fn default() -> Self {
+        // use Default::default? instead of repeating myself?
+        Cli { 
+            port: 8083, 
+            root: None, 
+            tables: false, 
+            footnotes: false, 
+            strikethrough: false, 
+            tasklists: false, 
+            smart_punctuation: false, 
+            header_attributes: false, 
+            front_matter: None, 
+            config: None,
+            //..Default::default()
+        }
+    }
+}
+
+impl TryFrom<(&str, PayloadFormat)> for Cli {
+    type Error = anyhow::Error;
+    fn try_from(value: (&str, PayloadFormat)) -> std::result::Result<Self, Self::Error> {
+        match value.1 {
+            PayloadFormat::Json => Ok(serde_json::from_str(value.0)?),
+            PayloadFormat::Toml => Ok(toml::from_str(value.0)?),
+            PayloadFormat::Yaml => Ok(serde_yaml::from_str(value.0)?),
+            x => {
+                Err(anyhow!("Payload format {:?} is not supported. Use Json, Toml or Yaml.", x))
+            }
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, ValueEnum, Deserialize, Serialize)]
 enum FrontMatter {
     Json,
     Toml,
@@ -79,6 +118,8 @@ enum FrontMatter {
     Refdef, // probably a better name can be thought of
 }
 
+// TODO can enums start in another enum def? can the contain "subsets"?
+// think a subset of valid cli formats, subset of valid front matter formats etc
 #[derive(Debug, PartialEq, Eq)]
 enum PayloadFormat {
     Json,
@@ -89,13 +130,64 @@ enum PayloadFormat {
     Pickle,
 }
 
+impl TryFrom<&str> for PayloadFormat {
+    type Error = String;
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        match value {
+            "json"      => Ok(PayloadFormat::Json),
+            "toml"      => Ok(PayloadFormat::Toml),
+            "yaml"      => Ok(PayloadFormat::Yaml),
+            "html"      => Ok(PayloadFormat::Html),
+            "md"        => Ok(PayloadFormat::Markdown),
+            "pickle"    => Ok(PayloadFormat::Pickle),
+            x           => Err(format!("{} extension not supported.", x)),
+        }
+    }
+}
+
+impl Display for PayloadFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            PayloadFormat::Html => "html",
+            PayloadFormat::Json => "json",
+            PayloadFormat::Markdown => "md",
+            PayloadFormat::Pickle => "pickle",
+            PayloadFormat::Toml => "toml",
+            PayloadFormat::Yaml => "yaml",
+        })
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let mut cli = Cli::parse();
-    if cli.dir.is_none() {
+
+    if let Some(config) = &cli.config {
+        let path = SysPath::new(&config);
+        let valid_ext = path.extension()
+        .and_then(|s| s.to_str())
+        .and_then(|s| PayloadFormat::try_from(s).ok())
+        .filter(|s| [PayloadFormat::Json, PayloadFormat::Yaml, PayloadFormat::Toml].contains(s));
+        if valid_ext.is_some() && path.exists() {
+            if let Ok(mut file) = File::open(path) {
+                let mut buf = String::new();
+                let _ = file.read_to_string(&mut buf);
+                match Cli::try_from((buf.as_str(), valid_ext.unwrap())) {
+                    Ok(ncli) => cli = ncli,
+                    // Error should never be received here,
+                    // due to `valid_ext` chain.
+                    //Err(x) => panic!("{}", x),
+                    _ => {}
+                }
+            } // TODO handle error
+            
+        }
+    }
+
+    if cli.root.is_none() {
         if let Ok(path) = env::current_dir() {
             if let Some(path) = path.to_str() {
-                cli.dir = Some(path.to_string());
+                cli.root = Some(path.to_string());
             }
         }
     }
@@ -130,65 +222,25 @@ async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> 
     #[cfg(debug_assertions)]
     dbg!(&path);
     
-    let mut path = path;
     let path_ext = SysPath::new(&path).extension();
-    let extension:Option<PayloadFormat>;
-    match path_ext {
-        Some(x) if (x == "json") => {
-            path = path.replace(".json", ".md");
-            extension = Some(PayloadFormat::Json);
-        }
-        Some(x) if (x == "toml") => {
-            path = path.replace(".toml", ".md");
-            extension = Some(PayloadFormat::Toml);
-        },
-        Some(x) if (x == "yaml") => {
-            path = path.replace(".yaml", ".md");
-            extension = Some(PayloadFormat::Yaml);
-        },
-        Some(x) if (x == "pickle") => {
-            path = path.replace(".pickle", ".md");
-            extension = Some(PayloadFormat::Pickle);
-        }
-        Some(x) if (x == "html") => {
-            path = path.replace(".html", ".md");
-            extension = Some(PayloadFormat::Html);
-        },
-        Some(x) if (x == "md") => {
-            extension = Some(PayloadFormat::Markdown);
-        },
-        _ => {
-            extension = None;
-        }
-    }
+    let extension = path_ext
+    .and_then(|s| s.to_str())
+    .and_then(|s| PayloadFormat::try_from(s).ok());
 
     if let Some(ref extension) = extension {
-        use PayloadFormat as PF;
-
+        let path = path.replace(&(".".to_owned() + &extension.to_string()), ".md");
         // Handle commonmark requests early
         if extension == &PayloadFormat::Markdown {
-            return fetch_md(&path).map(|v| v.into_response())
+            return fetch_md(&path)
+            .and_then(|v| {
+                str::from_utf8(&v)
+                .or(Err(StatusCode::BAD_REQUEST.into()))
+                .map(|s| s.to_string())
+            })
+            .map(|s| s.into_response())
+
         }
-        let payload = parse_to_extension(path, state)?;
-        match extension {
-            PF::Html => {
-                return Ok(Html(payload.html).into_response());
-            },
-            PF::Json => if let Ok(json) = serde_json::to_string_pretty(&payload) {
-                return Ok(json.into_response())
-            }
-            PF::Yaml => if let Ok(yaml) = serde_yaml::to_string(&payload) {
-                return Ok(yaml.into_response())
-            }
-            PF::Toml => if let Ok(toml) = toml::to_string_pretty(&payload) {
-                return Ok(toml.into_response())
-            }
-            PF::Pickle => if let Ok(pickle) = serde_pickle::to_vec(&payload, Default::default()) {
-                return Ok(pickle.into_response())
-            }
-            _ => {}
-            
-        }
+        return generate_payload(path, state)?.into_response_for(&extension);
 
     }
     Err(StatusCode::BAD_REQUEST.into())
@@ -208,11 +260,11 @@ fn fetch_md(path:&String) -> Result<Vec<u8>> {
     Err(StatusCode::NOT_FOUND.into())
 }
 
-fn parse_to_extension(path:String, state:Arc<Cli>) -> Result<Payload> {
+fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
     if SysPath::new(&path).exists() {
         let buf = fetch_md(&path)?;
         let mut buf = &buf[..];
-        let mut pod:Pod = Pod::Null;
+        let mut pod:Pod = Pod::String("".to_owned());
         let mut matter:Option<ParsedEntity> = None;
         let mut refdef = RefDefMatter::new(buf);
 
@@ -436,9 +488,9 @@ impl<'input> RefDefMatter<'input> {
                 _ if til_end => {
                     continue;
                 },
-                x => {
+                _x => {
                     #[cfg(debug_assertions)]
-                    dbg!(i, str::from_utf8(&[x]).unwrap());
+                    dbg!(i, str::from_utf8(&[_x]).unwrap());
                     break;
                 }
             }
@@ -552,4 +604,38 @@ impl<'input> RefDefMatter<'input> {
 struct Payload {
     front_matter:serde_json::Value,
     html:String,
+}
+
+impl Payload {
+    fn into_response_for(self, ext:&PayloadFormat) -> Result<Response> {
+        match ext {
+            PayloadFormat::Html => {
+                return Ok(Html(self.html).into_response())
+            }
+            PayloadFormat::Json => {
+                if let Ok(json) = serde_json::to_string_pretty(&self) {
+                    return Ok(json.into_response())
+                }
+            }
+            PayloadFormat::Yaml => {
+                if let Ok(yaml) = serde_yaml::to_string(&self) {
+                    return Ok(yaml.into_response())
+                }
+            }
+            PayloadFormat::Toml => {
+                if let Ok(toml) = toml::to_string_pretty(&self) {
+                    return Ok(toml.into_response())
+                }
+            }
+            PayloadFormat::Pickle => {
+                if let Ok(pickle) = serde_pickle::to_vec(&self, Default::default()) {
+                    return Ok(pickle.into_response())
+                }
+            }
+            PayloadFormat::Markdown => {
+                return Err(StatusCode::BAD_REQUEST.into())
+            }
+        }
+        Err(StatusCode::BAD_REQUEST.into())
+    }
 }
