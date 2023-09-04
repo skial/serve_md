@@ -38,7 +38,7 @@ use serde_derive::Deserialize;
 use clap::{Parser as CliParser, ValueEnum};
 use gray_matter::{Pod, ParsedEntity, Matter, engine::{YAML, JSON, TOML}};
 
-#[derive(Debug, CliParser, Deserialize, Serialize)]
+#[derive(Debug, Default, CliParser, Deserialize, Serialize)]
 #[serde(default = "Cli::default")]
 struct Cli {
     /// Set the root directory to search & serve .md files from.
@@ -75,25 +75,6 @@ struct Cli {
     #[arg(short, long)]
     #[serde(skip)]
     config:Option<String>,
-}
-
-impl Default for Cli {
-    fn default() -> Self {
-        // use Default::default? instead of repeating myself?
-        Cli { 
-            port: 8083, 
-            root: None, 
-            tables: false, 
-            footnotes: false, 
-            strikethrough: false, 
-            tasklists: false, 
-            smart_punctuation: false, 
-            header_attributes: false, 
-            front_matter: None, 
-            config: None,
-            //..Default::default()
-        }
-    }
 }
 
 impl TryFrom<(&str, PayloadFormat)> for Cli {
@@ -184,6 +165,9 @@ async fn main() {
         }
     }
 
+    if cli.port == 0 {
+        cli.port = 8083;
+    }
     if cli.root.is_none() {
         if let Ok(path) = env::current_dir() {
             if let Some(path) = path.to_str() {
