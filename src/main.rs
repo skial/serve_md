@@ -85,7 +85,7 @@ impl Cli {
             .and_then(|s| s.to_str())
             .and_then(|s| PayloadFormat::try_from(s).ok())
             .filter(|s| [PayloadFormat::Json, PayloadFormat::Yaml, PayloadFormat::Toml].contains(s));
-            if valid_ext.is_some() && path.exists() {
+            if valid_ext.is_some() && path.exists() { // TODO fix clippy warning
                 if let Ok(mut file) = File::open(path) {
                     let mut buf = String::new();
                     let _ = file.read_to_string(&mut buf);
@@ -133,6 +133,31 @@ enum FrontMatter {
     Toml,
     Yaml,
     Refdef, // probably a better name can be thought of
+}
+
+impl FrontMatter {
+    fn as_matter(self, input: &str) -> Option<ParsedEntity> {
+        match self {
+            FrontMatter::Json => Some(Matter::<JSON>::new().parse(input)),
+            FrontMatter::Toml => Some(Matter::<TOML>::new().parse(input)),
+            FrontMatter::Yaml => Some(Matter::<YAML>::new().parse(input)),
+            FrontMatter::Refdef => None,
+        }
+    }
+
+    fn as_pod(self, input: &str) -> Option<(Pod, Vec<u8>)> {
+        let pod = if let Some(matter) = self.as_matter(input) {
+            let buf = matter.content.as_bytes().to_vec();
+            matter.data.map(move |p| (p.clone(), buf))
+        } else {
+            let buf = &input.as_bytes();
+            let mut refdef = RefDefMatter::new(buf);
+            refdef.scan();
+            refdef.parse_gray_matter().map(|p| (p, buf.to_vec()))
+        };
+        
+        pod
+    }
 }
 
 // TODO can enums start in another enum def? can the contain "subsets"?
@@ -249,64 +274,18 @@ fn fetch_md(path:&String) -> Result<Vec<u8>> {
 
 fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
     if SysPath::new(&path).exists() {
-        let buf = fetch_md(&path)?;
-        let mut buf = &buf[..];
+        let mut input = fetch_md(&path)?;
         let mut pod:Pod = Pod::String("".to_owned());
-        let mut matter:Option<ParsedEntity> = None;
-        let mut refdef = RefDefMatter::new(buf);
 
-        // Handle front matter with `gray_matter`
-        match state.front_matter {
-            Some(FrontMatter::Yaml) => {
-                if let Ok(s) = str::from_utf8(&buf) {
-                    let m = Matter::<YAML>::new();
-                    matter = Some(m.parse(s));
-
-                } else {
-                    #[cfg(debug_assertions)]
-                    dbg!("error yaml");
-                }
-            },
-            Some(FrontMatter::Json) => {
-                if let Ok(s) = str::from_utf8(&buf) {
-                    let m = Matter::<JSON>::new();
-                    matter = Some(m.parse(s));
-
-                } else {
-                    #[cfg(debug_assertions)]
-                    dbg!("error json");
-                }
-            },
-            Some(FrontMatter::Toml) => {
-                if let Ok(s) = str::from_utf8(&buf) {
-                    let m = Matter::<TOML>::new();
-                    matter = Some(m.parse(s));
-
-                } else {
-                    #[cfg(debug_assertions)]
-                    dbg!("error toml");
-                }
-            },
-            Some(FrontMatter::Refdef) => {
-                // Would've preferred to impl custom Engine but `refdef`
-                // doesnt have a delimiter, so just use Pod.
-                refdef.scan();
-                if let Some(m) = refdef.parse_gray_matter() {
-                    pod = m;
-                }
-            },
-            None => {}
-        }
-
-        if let Some(info) = &matter {
-            if let Some(p) = &info.data {
-                // update `buf` to be remaining text minus the front matter.
-                pod = p.clone();
-                #[cfg(debug_assertions)]
-                dbg!(&info.content);
-                buf = &info.content.as_bytes();
+        if let Some(fm) = state.front_matter {
+            let op = str::from_utf8(&input[..]).ok().and_then(|s| fm.as_pod(s));
+            if let Some((p, v)) = op {
+                pod = p;
+                input = v;
             }
         }
+
+        let buf = &input[..];
 
         let mut md_opt = Options::empty();
         if state.tables {
