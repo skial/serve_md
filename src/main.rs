@@ -69,7 +69,7 @@ struct Cli {
 
     /// The type of front matter.
     #[arg(short = 'm', long, value_enum)]
-    front_matter:Option<FrontMatter>,
+    front_matter:Option<MatterFormats>,
 
     /// Use a configuration file instead.
     #[arg(short, long)]
@@ -78,27 +78,39 @@ struct Cli {
 }
 
 impl Cli {
+    // TODO either:
+    //  - return Result and handle errors
+    //  - continue and use sensible defaults
+    //      + implement sensible defaults
     fn load_config(&mut self) {
         if let Some(config) = &self.config {
             let path = SysPath::new(&config);
             let valid_ext = path.extension()
             .and_then(|s| s.to_str())
-            .and_then(|s| PayloadFormat::try_from(s).ok())
-            .filter(|s| [PayloadFormat::Json, PayloadFormat::Yaml, PayloadFormat::Toml].contains(s));
-            if valid_ext.is_some() && path.exists() { // TODO fix clippy warning
-                if let Ok(mut file) = File::open(path) {
-                    let mut buf = String::new();
-                    let _ = file.read_to_string(&mut buf);
-                    match Cli::try_from((buf.as_str(), valid_ext.unwrap())) {
-                        Ok(ncli) => *self = ncli,
-                        _ => {}
+            .and_then(|s| PayloadFormats::try_from(s).ok())
+            .filter(|s| [PayloadFormats::Json, PayloadFormats::Yaml, PayloadFormats::Toml].contains(s));
+            match valid_ext {
+                Some(valid_ext) if path.exists() => {
+                    if let Ok(mut file) = File::open(path) {
+                        let mut buf = String::new();
+                        let _ = file.read_to_string(&mut buf);
+                        match Cli::try_from((buf.as_str(), valid_ext)) {
+                            Ok(ncli) => *self = ncli,
+                            _ => {}
+                        }
                     }
-                } // TODO handle error
-                
+                }
+                Some(_) if !path.exists() => {
+                    println!("The file {} does not exist. Continuing with defaults.", path.display())
+                }
+                Some(_) | None => {
+                    println!("Invalid value passed into --config. Make sure the file type is one of .json, .yaml or .toml. Continuing with defaults.")
+                }
             }
         }
     }
 
+    // TODO rename to sensible defaults?
     fn set_missing(&mut self) {
         if self.port == 0 {
             self.port = 8083;
@@ -113,13 +125,13 @@ impl Cli {
     }
 }
 
-impl TryFrom<(&str, PayloadFormat)> for Cli {
+impl TryFrom<(&str, PayloadFormats)> for Cli {
     type Error = anyhow::Error;
-    fn try_from(value: (&str, PayloadFormat)) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: (&str, PayloadFormats)) -> std::result::Result<Self, Self::Error> {
         match value.1 {
-            PayloadFormat::Json => Ok(serde_json::from_str(value.0)?),
-            PayloadFormat::Toml => Ok(toml::from_str(value.0)?),
-            PayloadFormat::Yaml => Ok(serde_yaml::from_str(value.0)?),
+            PayloadFormats::Json => Ok(serde_json::from_str(value.0)?),
+            PayloadFormats::Toml => Ok(toml::from_str(value.0)?),
+            PayloadFormats::Yaml => Ok(serde_yaml::from_str(value.0)?),
             x => {
                 Err(anyhow!("Payload format {:?} is not supported. Use Json, Toml or Yaml.", x))
             }
@@ -127,21 +139,48 @@ impl TryFrom<(&str, PayloadFormat)> for Cli {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, ValueEnum, Deserialize, Serialize)]
-enum FrontMatter {
-    Json,
-    Toml,
-    Yaml,
-    Refdef, // probably a better name can be thought of
+#[repr(u8)]
+enum ConfigFormats {
+    Json = GenericFormats::Json as u8,
+    Yaml = GenericFormats::Yaml as u8,
+    Toml = GenericFormats::Toml as u8,
 }
 
-impl FrontMatter {
+#[repr(u8)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, ValueEnum, Deserialize, Serialize)]
+enum MatterFormats {
+    Refdef = 0,
+    Json = GenericFormats::Json as u8,
+    Yaml = GenericFormats::Yaml as u8,
+    Toml = GenericFormats::Toml as u8,
+}
+
+impl Display for MatterFormats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MatterFormats::Refdef     => write!(f, "{}", "refdef"),
+            x => {
+                let x:Result<GenericFormats, _> = self.try_into();
+                match x {
+                    Ok(gf) => {
+                        gf.fmt(f)
+                    },
+                    Err(_) => {
+                        Err(std::fmt::Error{})
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl MatterFormats {
     fn as_matter(self, input: &str) -> Option<ParsedEntity> {
         match self {
-            FrontMatter::Json => Some(Matter::<JSON>::new().parse(input)),
-            FrontMatter::Toml => Some(Matter::<TOML>::new().parse(input)),
-            FrontMatter::Yaml => Some(Matter::<YAML>::new().parse(input)),
-            FrontMatter::Refdef => None,
+            MatterFormats::Json => Some(Matter::<JSON>::new().parse(input)),
+            MatterFormats::Toml => Some(Matter::<TOML>::new().parse(input)),
+            MatterFormats::Yaml => Some(Matter::<YAML>::new().parse(input)),
+            MatterFormats::Refdef => None,
         }
     }
 
@@ -160,43 +199,125 @@ impl FrontMatter {
     }
 }
 
-// TODO can enums start in another enum def? can the contain "subsets"?
-// think a subset of valid cli formats, subset of valid front matter formats etc
+#[repr(u8)]
 #[derive(Debug, PartialEq, Eq)]
-enum PayloadFormat {
-    Json,
-    Toml,
-    Yaml,
-    Html,
-    Markdown,
-    Pickle,
+enum PayloadFormats {
+    Html     = 1,
+    Markdown = 2,
+    Json     = GenericFormats::Json as u8,
+    Yaml     = GenericFormats::Yaml as u8,
+    Toml     = GenericFormats::Toml as u8,
+    Csv      = GenericFormats::Csv as u8,
+    Pickle   = GenericFormats::Pickle as u8,
+    Postcard = GenericFormats::Postcard as u8,
+    Cbor     = GenericFormats::Cbor as u8,
 }
 
-impl TryFrom<&str> for PayloadFormat {
-    type Error = String;
+impl Display for PayloadFormats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PayloadFormats::Html     => write!(f, "{}", "html"),
+            PayloadFormats::Markdown => write!(f, "{}", "md"),
+            x => {
+                let x:Result<GenericFormats, _> = self.try_into();
+                match x {
+                    Ok(gf) => {
+                        gf.fmt(f)
+                    },
+                    Err(_) => {
+                        Err(std::fmt::Error{})
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl TryFrom<&str> for PayloadFormats {
+    type Error = String; // TODO use anyhow
     fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
         match value {
-            "json"      => Ok(PayloadFormat::Json),
-            "toml"      => Ok(PayloadFormat::Toml),
-            "yaml"      => Ok(PayloadFormat::Yaml),
-            "html"      => Ok(PayloadFormat::Html),
-            "md"        => Ok(PayloadFormat::Markdown),
-            "pickle"    => Ok(PayloadFormat::Pickle),
+            "json"      => Ok(PayloadFormats::Json),
+            "toml"      => Ok(PayloadFormats::Toml),
+            "yaml"      => Ok(PayloadFormats::Yaml),
+            "html"      => Ok(PayloadFormats::Html),
+            "md"        => Ok(PayloadFormats::Markdown),
+            "pickle"    => Ok(PayloadFormats::Pickle),
+            "cbor"      => Ok(PayloadFormats::Cbor),
+            "csv"       => Ok(PayloadFormats::Csv),
+            "postcard"  => Ok(PayloadFormats::Postcard),
             x           => Err(format!("{} extension not supported.", x)),
         }
     }
 }
 
-impl Display for PayloadFormat {
+#[repr(u8)]
+#[derive(Debug, PartialEq, Eq)]
+enum GenericFormats {
+    Json = 3,
+    Yaml,
+    Toml,
+    Csv,
+    Pickle,
+    Postcard,
+    Cbor,
+}
+
+impl Display for GenericFormats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
-            PayloadFormat::Html => "html",
-            PayloadFormat::Json => "json",
-            PayloadFormat::Markdown => "md",
-            PayloadFormat::Pickle => "pickle",
-            PayloadFormat::Toml => "toml",
-            PayloadFormat::Yaml => "yaml",
+            GenericFormats::Json     => "json",
+            GenericFormats::Yaml     => "yaml",
+            GenericFormats::Toml     => "toml",
+            GenericFormats::Csv      => "csv",
+            GenericFormats::Pickle   => "pickle",
+            GenericFormats::Postcard => "postcard",
+            GenericFormats::Cbor     => "cbor",
         })
+    }
+}
+
+impl TryFrom<&u8> for GenericFormats {
+    type Error = anyhow::Error;
+    fn try_from(value: &u8) -> std::result::Result<Self, Self::Error> {
+        match value {
+            x if x == &(GenericFormats::Json      as u8) => Ok(GenericFormats::Json),
+            x if x == &(GenericFormats::Yaml      as u8) => Ok(GenericFormats::Yaml),
+            x if x == &(GenericFormats::Toml      as u8) => Ok(GenericFormats::Toml),
+            x if x == &(GenericFormats::Csv       as u8) => Ok(GenericFormats::Csv),
+            x if x == &(GenericFormats::Pickle    as u8) => Ok(GenericFormats::Pickle),
+            x if x == &(GenericFormats::Postcard  as u8) => Ok(GenericFormats::Postcard),
+            x if x == &(GenericFormats::Cbor      as u8) => Ok(GenericFormats::Cbor),
+            x => Err(anyhow!("{} is not recognised as a GenericFormat.", x))
+        }
+    }
+}
+
+impl TryFrom<&PayloadFormats> for GenericFormats {
+    type Error = anyhow::Error;
+    fn try_from(value: &PayloadFormats) -> std::result::Result<Self, Self::Error> {
+        match value {
+            PayloadFormats::Html | PayloadFormats::Markdown => Err(anyhow!("{} is not a GenericFormat.", value)),
+            PayloadFormats::Json     => Ok(GenericFormats::Json),
+            PayloadFormats::Yaml     => Ok(GenericFormats::Yaml),
+            PayloadFormats::Toml     => Ok(GenericFormats::Toml),
+            PayloadFormats::Csv      => Ok(GenericFormats::Csv),
+            PayloadFormats::Pickle   => Ok(GenericFormats::Pickle),
+            PayloadFormats::Postcard => Ok(GenericFormats::Postcard),
+            PayloadFormats::Cbor     => Ok(GenericFormats::Cbor),
+        }
+    }
+}
+
+impl TryFrom<&MatterFormats> for GenericFormats {
+    type Error = anyhow::Error;
+    fn try_from(value: &MatterFormats) -> std::result::Result<Self, Self::Error> {
+        match value {
+            MatterFormats::Refdef => Err(anyhow!("{} is not a GenericFormat.", value)),
+            MatterFormats::Json     => Ok(GenericFormats::Json),
+            MatterFormats::Yaml     => Ok(GenericFormats::Yaml),
+            MatterFormats::Toml     => Ok(GenericFormats::Toml),
+        }
     }
 }
 
@@ -239,12 +360,12 @@ async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> 
     let path_ext = SysPath::new(&path).extension();
     let extension = path_ext
     .and_then(|s| s.to_str())
-    .and_then(|s| PayloadFormat::try_from(s).ok());
+    .and_then(|s| PayloadFormats::try_from(s).ok());
 
     if let Some(ref extension) = extension {
         let path = path.replace(&(".".to_owned() + &extension.to_string()), ".md");
         // Handle commonmark requests early
-        if extension == &PayloadFormat::Markdown {
+        if extension == &PayloadFormats::Markdown {
             return fetch_md(&path)
             .and_then(|v| {
                 str::from_utf8(&v)
@@ -573,32 +694,32 @@ struct Payload {
 }
 
 impl Payload {
-    fn into_response_for(self, ext:&PayloadFormat) -> Result<Response> {
-        match ext {
-            PayloadFormat::Html => {
+    fn into_response_for(self, extension:&PayloadFormats) -> Result<Response> {
+        match extension {
+            PayloadFormats::Html => {
                 return Ok(Html(self.html).into_response())
             }
-            PayloadFormat::Json => {
+            PayloadFormats::Json => {
                 if let Ok(json) = serde_json::to_string_pretty(&self) {
                     return Ok(json.into_response())
                 }
             }
-            PayloadFormat::Yaml => {
+            PayloadFormats::Yaml => {
                 if let Ok(yaml) = serde_yaml::to_string(&self) {
                     return Ok(yaml.into_response())
                 }
             }
-            PayloadFormat::Toml => {
+            PayloadFormats::Toml => {
                 if let Ok(toml) = toml::to_string_pretty(&self) {
                     return Ok(toml.into_response())
                 }
             }
-            PayloadFormat::Pickle => {
+            PayloadFormats::Pickle => {
                 if let Ok(pickle) = serde_pickle::to_vec(&self, Default::default()) {
                     return Ok(pickle.into_response())
                 }
             }
-            PayloadFormat::Markdown => {
+            _ => {
                 return Err(StatusCode::BAD_REQUEST.into())
             }
         }
