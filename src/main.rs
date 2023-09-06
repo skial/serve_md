@@ -87,8 +87,7 @@ impl Cli {
             let path = SysPath::new(&config);
             let valid_ext = path.extension()
             .and_then(|s| s.to_str())
-            .and_then(|s| PayloadFormats::try_from(s).ok())
-            .filter(|s| [PayloadFormats::Json, PayloadFormats::Yaml, PayloadFormats::Toml].contains(s));
+            .and_then(|s| ConfigFormats::try_from(s).ok());
             match valid_ext {
                 Some(valid_ext) if path.exists() => {
                     if let Ok(mut file) = File::open(path) {
@@ -125,16 +124,13 @@ impl Cli {
     }
 }
 
-impl TryFrom<(&str, PayloadFormats)> for Cli {
+impl TryFrom<(&str, ConfigFormats)> for Cli {
     type Error = anyhow::Error;
-    fn try_from(value: (&str, PayloadFormats)) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: (&str, ConfigFormats)) -> std::result::Result<Self, Self::Error> {
         match value.1 {
-            PayloadFormats::Json => Ok(serde_json::from_str(value.0)?),
-            PayloadFormats::Toml => Ok(toml::from_str(value.0)?),
-            PayloadFormats::Yaml => Ok(serde_yaml::from_str(value.0)?),
-            x => {
-                Err(anyhow!("Payload format {:?} is not supported. Use Json, Toml or Yaml.", x))
-            }
+            ConfigFormats::Json => Ok(serde_json::from_str(value.0)?),
+            ConfigFormats::Toml => Ok(toml::from_str(value.0)?),
+            ConfigFormats::Yaml => Ok(serde_yaml::from_str(value.0)?),
         }
     }
 }
@@ -144,6 +140,18 @@ enum ConfigFormats {
     Json = GenericFormats::Json as u8,
     Yaml = GenericFormats::Yaml as u8,
     Toml = GenericFormats::Toml as u8,
+}
+
+impl TryFrom<&str> for ConfigFormats {
+    type Error = String; // TODO use anyhow
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        match value {
+            "json"      => Ok(ConfigFormats::Json),
+            "toml"      => Ok(ConfigFormats::Toml),
+            "yaml"      => Ok(ConfigFormats::Yaml),
+            x           => Err(format!("{} extension not supported.", x)),
+        }
+    }
 }
 
 #[repr(u8)]
@@ -159,7 +167,7 @@ impl Display for MatterFormats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MatterFormats::Refdef     => write!(f, "{}", "refdef"),
-            x => {
+            _ => {
                 let x:Result<GenericFormats, _> = self.try_into();
                 match x {
                     Ok(gf) => {
@@ -218,7 +226,7 @@ impl Display for PayloadFormats {
         match self {
             PayloadFormats::Html     => write!(f, "{}", "html"),
             PayloadFormats::Markdown => write!(f, "{}", "md"),
-            x => {
+            _ => {
                 let x:Result<GenericFormats, _> = self.try_into();
                 match x {
                     Ok(gf) => {
