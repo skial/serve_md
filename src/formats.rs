@@ -4,6 +4,8 @@ use std::fmt::Display;
 use serde_derive::{Deserialize, Serialize};
 use gray_matter::{Pod, ParsedEntity, Matter, engine::{YAML, JSON, TOML}};
 
+use crate::matter::*;
+
 #[repr(u8)]
 pub enum ConfigFormats {
     Json = GenericFormats::Json as u8,
@@ -62,7 +64,6 @@ impl MatterFormats {
     }
 
     pub fn as_pod(self, input: &str) -> Option<(Pod, Vec<u8>)> {
-        use crate::RefDefMatter;
         let pod = if let Some(matter) = self.as_matter(input) {
             let buf = matter.content.as_bytes().to_vec();
             matter.data.map(move |p| (p.clone(), buf))
