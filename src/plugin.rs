@@ -89,19 +89,18 @@ impl Plugin for HaxeRoundup {
 
     fn replace_slice<'a>(&self, slice: &[(usize, Event<'a>)]) -> Vec<Event<'a>> {
         println!("{:?}", slice);
-        let mut iter = slice
-        .iter().skip(1);
         let mut r = vec![
             Event::Html(CowStr::Borrowed("<details open>")),
             Event::SoftBreak,
             Event::Html(CowStr::Borrowed("<summary>")),
-            // TODO remove unwrap calls.
-            iter.next().unwrap().1.to_owned(),
-            iter.next().unwrap().1.to_owned(),
-            iter.next().unwrap().1.to_owned(),
-            Event::Html(CowStr::Borrowed("</summary>"))
         ];
-        iter.skip(1).for_each(|t| r.push(t.1.to_owned()));
+        if let (Some((_, a)), Some((_, b)), Some((_, c))) 
+             = (slice.get(1), slice.get(2), slice.get(3)) 
+        {
+            r.extend([a.to_owned(), b.to_owned(), c.to_owned()]);
+        }
+        r.push(Event::Html(CowStr::Borrowed("</summary>")));
+        r.extend(slice.iter().skip(5).map(|t| t.1.to_owned()));
         r.push(Event::Html(CowStr::Borrowed("</details>")));
         r
     }
