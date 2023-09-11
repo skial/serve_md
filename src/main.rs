@@ -258,7 +258,9 @@ fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
                 }
             }
 
-            if let Some(range) = plugin.finalize(collection.last().unwrap().0) {
+            // TODO maybe reuse `check_slice` but with a single item.
+            // `final_check` has more meaning than a single item being passed in.
+            if let Some(range) = plugin.final_check(collection.last().unwrap().0) {
                 ranges.push(range);
             }
 

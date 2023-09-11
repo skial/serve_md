@@ -19,7 +19,7 @@ pub trait Plugin {
     */
     fn check_slice(&mut self, slice: &[(usize, Event)]) -> Option<Range<usize>>;
 
-    fn finalize(&mut self, pos: usize) -> Option<Range<usize>>;
+    fn final_check(&mut self, pos: usize) -> Option<Range<usize>>;
 
     /*
     Recieves a slice the size of a range `max - min` returned by an earlier 
@@ -48,11 +48,11 @@ impl Plugin for HaxeRoundup {
         println!("{:?}", slice);
         match slice {
             [
-                (a, Event::Start(Tag::Heading(HeadingLevel::H5, _, _))), 
+                (a, Event::Start(Tag::Heading(lvl, _, _))), 
                 (_, Event::Start(Tag::Emphasis)),
                 (_, Event::Text(CowStr::Borrowed("in case you missed it"))),
                 (b, Event::End(Tag::Emphasis))
-            ] => {
+            ] => if lvl >= &HeadingLevel::H5 {
                 if let Some(ref mut range) = self.range {
                     range.end = *b;
                     let r = range.clone();
@@ -78,8 +78,8 @@ impl Plugin for HaxeRoundup {
         None
     }
 
-    fn finalize(&mut self, pos:usize) -> Option<Range<usize>> {
-        dbg!("finalizing");
+    fn final_check(&mut self, pos:usize) -> Option<Range<usize>> {
+        dbg!();
         if let Some(ref mut range) = self.range {
             range.end = pos;
 
