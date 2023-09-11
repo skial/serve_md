@@ -7,11 +7,11 @@ pub trait Plugin {
     /*
     The size of `slice` passed into `check_slice`.
     */
-    fn window_size() -> u8; // TODO change to usize?
+    fn window_size() -> usize;
     /*
     The min amount of new items to be inserted.
     */
-    fn new_items() -> u8; // TODO change to usize?
+    fn new_items() -> usize;
     /*
     Recieves a slice the size of `window_size`, containing (Index, Event) items.
     Returns `None` for no match, `Some(min_index..max_index)` for items that will
@@ -35,16 +35,16 @@ pub struct HaxeRoundup {
 }
 
 impl Plugin for HaxeRoundup {
-    fn window_size() -> u8 {
+    fn window_size() -> usize {
         4
     }
 
-    fn new_items() -> u8 {
+    fn new_items() -> usize {
         5
     }
 
     fn check_slice(&mut self, slice: &[(usize, Event)]) -> Option<Range<usize>> {
-        debug_assert!(slice.len() == HaxeRoundup::window_size() as usize);
+        debug_assert!(slice.len() == HaxeRoundup::window_size());
         println!("{:?}", slice);
         match slice {
             [

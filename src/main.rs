@@ -12,7 +12,7 @@ use std::{
     sync::Arc,
     ops::Range, 
     net::SocketAddr,
-    path::Path as SysPath, collections::VecDeque, 
+    path::Path as SysPath, 
 };
 
 use axum::{ 
@@ -247,7 +247,7 @@ fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
             let collection = collection.as_slice();
             let mut plugin = plugin::HaxeRoundup::default();
 
-            for slice in collection.windows(HaxeRoundup::window_size() as usize) {
+            for slice in collection.windows(HaxeRoundup::window_size()) {
                 match plugin.check_slice(slice) {
                     Some(range) => {
                         ranges.push(range);
@@ -266,7 +266,7 @@ fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
             dbg!(&ranges);
 
             let mut range_idx: usize = 0;
-            let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len() * HaxeRoundup::new_items() as usize) );
+            let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len() * HaxeRoundup::new_items()) );
 
             if !ranges.is_empty() {
                 debug_assert!( ranges.len() > 0 );
