@@ -265,8 +265,8 @@ fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
             #[cfg(debug_assertions)]
             dbg!(&ranges);
 
+            let mut range_idx: usize = 0;
             let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len() * HaxeRoundup::new_items() as usize) );
-            let mut ranges = VecDeque::from(ranges);
 
             if !ranges.is_empty() {
                 debug_assert!( ranges.len() > 0 );
@@ -274,7 +274,7 @@ fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
                 let mut i:usize = 0;
 
                 while i < collection.len() {
-                    if let Some(range) = ranges.get(0) {
+                    if let Some(range) = ranges.get(range_idx) {
                         let pair = &collection[i];
                         if !range.contains(&pair.0) {
                             new_collection.push(pair.1.to_owned());
@@ -285,7 +285,7 @@ fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
                         new_collection.extend_from_slice( &plugin.replace_slice(&collection[range.clone()]) );
 
                         i += range.len();
-                        ranges.pop_front();
+                        range_idx += 1;
                     } else {
                         i += 1;
                         continue;
