@@ -2,6 +2,7 @@
 
 mod matter;
 mod formats;
+mod plugin;
 
 use std::{
     str, 
@@ -11,7 +12,7 @@ use std::{
     sync::Arc,
     ops::Range, 
     net::SocketAddr,
-    path::Path as SysPath, 
+    path::Path as SysPath, collections::VecDeque, 
 };
 
 use axum::{ 
@@ -23,13 +24,10 @@ use axum::{
 };
 
 use pulldown_cmark::{
-    CowStr,
+    html,
+    Event,
     Options,
     Parser as CmParser,
-    Event,
-    Tag,
-    html,
-    HeadingLevel, 
 };
 
 use formats::*;
@@ -37,6 +35,8 @@ use serde::Serialize;
 use gray_matter::Pod;
 use serde_derive::Deserialize;
 use clap::Parser as CliParser;
+
+use crate::plugin::{HaxeRoundup, Plugin};
 
 #[derive(Debug, Default, CliParser, Deserialize, Serialize)]
 #[serde(default = "Cli::default")]
@@ -243,78 +243,53 @@ fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
             let mut md_parser = CmParser::new_ext(s, md_opt);
 
             let mut ranges:Vec<Range<usize>> = Vec::new();
-            let mut range:Option<Range<usize>> = None;
             let collection:Vec<_> = (0..).zip(&mut md_parser).collect();
             let collection = collection.as_slice();
+            let mut plugin = plugin::HaxeRoundup::default();
 
-            // This is custom to haxe roundup markdown files. 
-            // TODO
-            // make this redirect to external program, window size as cli option
-            // and registered program returns serialized changes.
-            for slice in collection.windows(4) {
-                match slice {
-                    [
-                        (a, Event::Start(Tag::Heading(HeadingLevel::H5, _, _))), 
-                        (_, Event::Start(Tag::Emphasis)),
-                        (_, Event::Text(CowStr::Borrowed("in case you missed it"))),
-                        (b, Event::End(Tag::Emphasis))
-                    ] => {
-                        finish_and_store(&mut ranges, &mut range, *b);
+            for slice in collection.windows(HaxeRoundup::window_size() as usize) {
+                match plugin.check_slice(slice) {
+                    Some(range) => {
+                        ranges.push(range);
+                    },
+                    None => {
 
-                        if range.is_none() {
-                            range = Some(*a..*b);
-                        }
-                    },
-                    [(idx, Event::Start(Tag::Heading(_, _, _))), _] if range.is_some() => {
-                        finish_and_store(&mut ranges, &mut range, *idx+1);
-                    },
-                    _ => {}
+                    }
                 }
             }
 
-            finish_and_store(&mut ranges, &mut range, collection.last().unwrap().0+1);
+            if let Some(range) = plugin.finalize(collection.last().unwrap().0) {
+                ranges.push(range);
+            }
 
             #[cfg(debug_assertions)]
             dbg!(&ranges);
 
-            let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len()*3) );
+            let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len() * HaxeRoundup::new_items() as usize) );
+            let mut ranges = VecDeque::from(ranges);
 
             if !ranges.is_empty() {
-                let Some(range) = ranges.pop() else {
-                    panic!("`ranges` should not be empty at this point.");
-                };
+                debug_assert!( ranges.len() > 0 );
 
                 let mut i:usize = 0;
 
                 while i < collection.len() {
-                    let pair = &collection[i];
-                    if !range.contains(&pair.0) {
-                        new_collection.push(pair.1.to_owned());
+                    if let Some(range) = ranges.get(0) {
+                        let pair = &collection[i];
+                        if !range.contains(&pair.0) {
+                            new_collection.push(pair.1.to_owned());
+                            i += 1;
+                            continue;
+                        }
+
+                        new_collection.extend_from_slice( &plugin.replace_slice(&collection[range.clone()]) );
+
+                        i += range.len();
+                        ranges.pop_front();
+                    } else {
                         i += 1;
                         continue;
                     }
-
-                    new_collection.push(Event::Html(CowStr::Borrowed("<details open>")));
-                    new_collection.push(Event::SoftBreak);
-                    new_collection.push(Event::Html(CowStr::Borrowed("<summary>")));
-                    let mut iter = range
-                        .clone()
-                        // skip the open h5 tag
-                        .skip(1);
-                    new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
-                    new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
-                    new_collection.push( collection[iter.next().unwrap()].1.to_owned() );
-                    new_collection.push(Event::Html(CowStr::Borrowed("</summary>")));
-                    iter
-                        // skip the end h5 tag
-                        .skip(1)
-                        .for_each(|ridx| {
-                            let (_, e) = &collection[ridx];
-                            new_collection.push( e.to_owned() );
-                        });
-                    new_collection.push(Event::Html(CowStr::Borrowed("</details>")));
-
-                    i += range.len();
 
                 }
             } else {
@@ -342,15 +317,6 @@ fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
 
     Err(StatusCode::NOT_FOUND.into())
 
-}
-
-fn finish_and_store(rs:&mut Vec<Range<usize>>, r:&mut Option<Range<usize>>, end:usize) {
-    if let Some(ref mut v) = r {
-        v.end = end;
-        let _tmp = v.to_owned();
-        *r = None;
-        rs.push(_tmp);
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
