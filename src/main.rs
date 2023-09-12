@@ -180,36 +180,30 @@ async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> 
         let path = path.replace(&(".".to_owned() + &extension.to_string()), ".md");
         // Handle commonmark requests early
         if extension == &PayloadFormats::Markdown {
-            return fetch_md(&path)
-            .and_then(|v| {
-                str::from_utf8(&v)
+            let buf = fetch_md(&path).await.map_err(|_| StatusCode::NOT_FOUND)?;
+            return str::from_utf8(&buf)
                 .or(Err(StatusCode::BAD_REQUEST.into()))
                 .map(|s| s.to_string())
-            })
-            .map(|s| s.into_response())
+                .map(|s| s.into_response())
 
         }
-        return generate_payload(path, state)?.into_response_for(&extension);
+        return generate_payload(path, state).await?.into_response_for(&extension);
 
     }
     Err(StatusCode::BAD_REQUEST.into())
 }
 
-fn fetch_md(path:&String) -> Result<Vec<u8>> {
-    let path = SysPath::new(&path);
-    if path.exists() {
-        let mut file = File::open(path).map_err(|_| StatusCode::NOT_FOUND)?;
-        let mut buf = vec![];
-        let _ = file.read_to_end(&mut buf);
-        return Ok(buf);
+async fn fetch_md(path: &String) -> std::io::Result<Vec<u8>> {
+    if tokio::fs::try_exists(path).await? {
+        return tokio::fs::read(path).await
     }
 
-    Err(StatusCode::NOT_FOUND.into())
+    Err(std::io::Error::from(std::io::ErrorKind::NotFound))
 }
 
-fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
-    if SysPath::new(&path).exists() {
-        let mut input = fetch_md(&path)?;
+async fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
+    if tokio::fs::try_exists(&path).await.map_err(|_| StatusCode::NOT_FOUND)? {
+        let mut input = fetch_md(&path).await.map_err(|_| StatusCode::NOT_FOUND)?;
         let mut pod:Pod = Pod::String("".to_owned());
 
         if let Some(fm) = state.front_matter {
@@ -314,11 +308,9 @@ fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
             // Utf8Error
             Err(StatusCode::NO_CONTENT.into())
         }
-
     }
 
     Err(StatusCode::NOT_FOUND.into())
-
 }
 
 #[derive(Serialize, Deserialize, Debug)]
