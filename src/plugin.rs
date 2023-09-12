@@ -13,9 +13,9 @@ pub trait Plugin {
     */
     fn new_items() -> usize;
     /*
-    Recieves a slice the size of `window_size`, containing (Index, Event) items.
-    Returns `None` for no match, `Some(min_index..max_index)` for items that will
-    be replaced in future `replace_slice` call.
+    Recieves a slice the size of `window_size`, containing `(Index, Event)` items.
+    Returns `Some(min_index..max_index)` for items that will be replaced in 
+    future `replace_slice` call.
     */
     fn check_slice(&mut self, slice: &[(usize, Event)]) -> Option<Range<usize>>;
 
@@ -73,6 +73,14 @@ impl Plugin for HaxeRoundup {
                     return Some(r);
                 }
             },
+            [(idx, Event::Rule), ..] => {
+                if let Some(ref mut range) = self.range {
+                    range.end = *idx;
+                    let r = range.clone();
+                    self.range = None;
+                    return Some(r);
+                }
+            },
             _ => {}
         }
 
@@ -84,7 +92,6 @@ impl Plugin for HaxeRoundup {
         dbg!();
         if let Some(ref mut range) = self.range {
             range.end = pos;
-
         }
         self.range.clone()
     }

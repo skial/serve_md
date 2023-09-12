@@ -252,6 +252,8 @@ async fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
             // TODO maybe reuse `check_slice` but with a single item.
             // `final_check` has more meaning than a single item being passed in.
             if let Some(range) = plugin.final_check(collection.last().unwrap().0) {
+                #[cfg(debug_assertions)]
+                dbg!(&range);
                 ranges.push(range);
             }
 
@@ -267,8 +269,8 @@ async fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
                 let mut i:usize = 0;
 
                 while i < collection.len() {
+                    let pair = &collection[i];
                     if let Some(range) = ranges.get(range_idx) {
-                        let pair = &collection[i];
                         if !range.contains(&pair.0) {
                             new_collection.push(pair.1.to_owned());
                             i += 1;
@@ -280,6 +282,9 @@ async fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
                         i += range.len();
                         range_idx += 1;
                     } else {
+                        #[cfg(debug_assertions)]
+                        dbg!(&pair);
+                        new_collection.push(pair.1.to_owned());
                         i += 1;
                         continue;
                     }
