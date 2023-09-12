@@ -45,6 +45,7 @@ impl Plugin for HaxeRoundup {
 
     fn check_slice(&mut self, slice: &[(usize, Event)]) -> Option<Range<usize>> {
         debug_assert!(slice.len() == HaxeRoundup::window_size());
+        #[cfg(debug_assertions)]
         println!("{:?}", slice);
         match slice {
             [
@@ -79,6 +80,7 @@ impl Plugin for HaxeRoundup {
     }
 
     fn final_check(&mut self, pos:usize) -> Option<Range<usize>> {
+        #[cfg(debug_assertions)]
         dbg!();
         if let Some(ref mut range) = self.range {
             range.end = pos;
@@ -88,6 +90,7 @@ impl Plugin for HaxeRoundup {
     }
 
     fn replace_slice<'a>(&self, slice: &[(usize, Event<'a>)]) -> Vec<Event<'a>> {
+        #[cfg(debug_assertions)]
         println!("{:?}", slice);
         let mut r = vec![
             Event::Html(CowStr::Borrowed("<details open>")),

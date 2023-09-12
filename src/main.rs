@@ -8,12 +8,14 @@ use std::{
     str, 
     env,
     fs::File, 
-    io::Read, 
+    io::{Read, Error, ErrorKind}, 
     sync::Arc,
     ops::Range, 
     net::SocketAddr,
     path::Path as SysPath, 
 };
+
+use tokio::fs::{try_exists, read};
 
 use axum::{ 
     Router,
@@ -194,11 +196,11 @@ async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> 
 }
 
 async fn fetch_md(path: &String) -> std::io::Result<Vec<u8>> {
-    if tokio::fs::try_exists(path).await? {
-        return tokio::fs::read(path).await
+    if try_exists(path).await? {
+        return read(path).await
     }
 
-    Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+    Err(Error::from(ErrorKind::NotFound))
 }
 
 async fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
@@ -242,13 +244,8 @@ async fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
             let mut plugin = plugin::HaxeRoundup::default();
 
             for slice in collection.windows(HaxeRoundup::window_size()) {
-                match plugin.check_slice(slice) {
-                    Some(range) => {
-                        ranges.push(range);
-                    },
-                    None => {
-
-                    }
+                if let Some(range) = plugin.check_slice(slice) {
+                    ranges.push(range);
                 }
             }
 
