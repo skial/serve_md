@@ -9,6 +9,7 @@ edition = "2021"
 anyhow = "1.0.75"
 axum = "0.6.20"
 clap = { version = "4.3.23", features = ["derive"] }
+emojis = "0.6.1"
 features = "0.10.0"
 gray_matter = "0.2.6"
 hyper = { version = "0.14.27", features = ["full"] }

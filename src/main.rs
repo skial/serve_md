@@ -38,7 +38,7 @@ use gray_matter::Pod;
 use serde_derive::Deserialize;
 use clap::Parser as CliParser;
 
-use crate::plugin::{HaxeRoundup, Plugin};
+use crate::plugin::{HaxeRoundup, Emoji, Plugin};
 
 #[derive(Debug, Default, CliParser, Deserialize, Serialize)]
 #[serde(default = "Cli::default")]
@@ -236,62 +236,75 @@ async fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
         }
 
         return if let Ok(s) = str::from_utf8(&buf) {
-            let mut md_parser = CmParser::new_ext(s, md_opt);
+            let md_parser = CmParser::new_ext(s, md_opt);
+            let mut collection_vec:Vec<_> = (0..).zip(md_parser).collect();
+            let mut collection_slice = collection_vec.as_slice();
+            let slice_len = collection_slice.len();
+            let mut plugins:Vec<Box<dyn Plugin>> = vec![Box::new(HaxeRoundup::default()), Box::new(Emoji)];
+            let mut new_collection:Vec<Event> = vec![];
+            let len = plugins.len();
 
-            let mut ranges:Vec<Range<usize>> = Vec::new();
-            let collection:Vec<_> = (0..).zip(&mut md_parser).collect();
-            let collection = collection.as_slice();
-            let mut plugin = plugin::HaxeRoundup::default();
+            for (index, plugin) in plugins.iter_mut().enumerate() {
+                let mut ranges:Vec<Range<usize>> = Vec::new();
+                
+                if index != 0 && index < len {
+                    collection_vec = (0..).zip(new_collection).collect();
+                    collection_slice = collection_vec.as_slice();
+                }
 
-            for slice in collection.windows(HaxeRoundup::window_size()) {
-                if let Some(range) = plugin.check_slice(slice) {
+                let mut plugin_collection:Vec<Event<>> = Vec::with_capacity( slice_len + (ranges.len() * plugin.window_size()) );
+                for slice in collection_slice.windows(plugin.window_size()) {
+                    if let Some(range) = plugin.check_slice(slice) {
+                        ranges.push(range);
+                    }
+                }
+    
+                // TODO maybe reuse `check_slice` but with a single item.
+                // `final_check` has more meaning than a single item being passed in.
+                if let Some(range) = plugin.final_check(collection_slice.last().unwrap().0) {
+                    #[cfg(debug_assertions)]
+                    dbg!(&range);
                     ranges.push(range);
                 }
-            }
-
-            // TODO maybe reuse `check_slice` but with a single item.
-            // `final_check` has more meaning than a single item being passed in.
-            if let Some(range) = plugin.final_check(collection.last().unwrap().0) {
+    
                 #[cfg(debug_assertions)]
-                dbg!(&range);
-                ranges.push(range);
-            }
-
-            #[cfg(debug_assertions)]
-            dbg!(&ranges);
-
-            let mut range_idx: usize = 0;
-            let mut new_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len() * HaxeRoundup::new_items()) );
-
-            if !ranges.is_empty() {
-                debug_assert!( ranges.len() > 0 );
-
-                let mut i:usize = 0;
-
-                while i < collection.len() {
-                    let pair = &collection[i];
-                    if let Some(range) = ranges.get(range_idx) {
-                        if !range.contains(&pair.0) {
-                            new_collection.push(pair.1.to_owned());
+                dbg!(&ranges);
+    
+                let mut range_idx: usize = 0;
+    
+                if !ranges.is_empty() {
+                    debug_assert!( ranges.len() > 0 );
+    
+                    let mut i:usize = 0;
+    
+                    while i < collection_slice.len() {
+                        let pair = &collection_slice[i];
+                        if let Some(range) = ranges.get(range_idx) {
+                            if !range.contains(&pair.0) {
+                                plugin_collection.push(pair.1.to_owned());
+                                i += 1;
+                                continue;
+                            }
+    
+                            plugin_collection.extend_from_slice( &plugin.replace_slice(&collection_slice[range.clone()]) );
+    
+                            i += range.len();
+                            range_idx += 1;
+                        } else {
+                            #[cfg(debug_assertions)]
+                            dbg!(&pair);
+                            plugin_collection.push(pair.1.to_owned());
                             i += 1;
                             continue;
                         }
-
-                        new_collection.extend_from_slice( &plugin.replace_slice(&collection[range.clone()]) );
-
-                        i += range.len();
-                        range_idx += 1;
-                    } else {
-                        #[cfg(debug_assertions)]
-                        dbg!(&pair);
-                        new_collection.push(pair.1.to_owned());
-                        i += 1;
-                        continue;
+    
                     }
-
+                } else {
+                    plugin_collection.extend(collection_slice.iter().map(|c| c.1.to_owned()));
+    
                 }
-            } else {
-                new_collection.extend(collection.iter().map(|c| c.1.to_owned()));
+
+                new_collection = plugin_collection;
 
             }
 
