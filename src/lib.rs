@@ -53,7 +53,7 @@ pub async fn determine(Path(path):Path<String>, state:Arc<State>) -> Result<Resp
                 .map(|s| s.into_response())
 
         }
-        return generate_payload(path, state).await?.into_response_for(&extension);
+        return generate_payload(path, state).await?.into_response_for(extension);
 
     }
     Err(StatusCode::BAD_REQUEST.into())
@@ -73,106 +73,17 @@ async fn generate_payload(path:String, state:Arc<State>) -> Result<Payload> {
         let mut pod:Pod = Pod::String("".to_owned());
 
         if let Some(fm) = state.front_matter {
-            let op = str::from_utf8(&input[..]).ok().and_then(|s| fm.as_pod(s));
-            if let Some((p, v)) = op {
+            let tp = str::from_utf8(&input[..]).ok().and_then(|s| fm.as_pod(s));
+            if let Some((p, v)) = tp {
                 pod = p;
                 input = v;
             }
         }
 
-        let buf = &input[..];
+        return if let Ok(s) = str::from_utf8(&input[..]) {
+            let md_parser = make_commonmark_parser(s, state);
+            let new_collection = process_commonmark_tokens(md_parser);
 
-        let mut md_opt = Options::empty();
-        if state.tables {
-            md_opt.insert(Options::ENABLE_TABLES);
-        }
-        if state.footnotes {
-            md_opt.insert(Options::ENABLE_FOOTNOTES);
-        }
-        if state.strikethrough {
-            md_opt.insert(Options::ENABLE_STRIKETHROUGH);
-        }
-        if state.smart_punctuation {
-            md_opt.insert(Options::ENABLE_SMART_PUNCTUATION);
-        }
-        if state.header_attributes {
-            md_opt.insert(Options::ENABLE_HEADING_ATTRIBUTES);
-        }
-
-        return if let Ok(s) = str::from_utf8(&buf) {
-            let md_parser = CmParser::new_ext(s, md_opt);
-            let mut collection_vec:Vec<_> = (0..).zip(md_parser).collect();
-            let mut collection_slice = collection_vec.as_slice();
-            let slice_len = collection_slice.len();
-            let mut plugins:Vec<Box<dyn Plugin>> = vec![Box::new(HaxeRoundup::default()), Box::new(Emoji)];
-            let mut new_collection:Vec<Event> = vec![];
-            let len = plugins.len();
-
-            for (index, plugin) in plugins.iter_mut().enumerate() {
-                let mut ranges:Vec<Range<usize>> = Vec::new();
-                
-                if index != 0 && index < len {
-                    collection_vec = (0..).zip(new_collection).collect();
-                    collection_slice = collection_vec.as_slice();
-                }
-
-                let mut plugin_collection:Vec<Event<>> = Vec::with_capacity( slice_len + (ranges.len() * plugin.window_size()) );
-                for slice in collection_slice.windows(plugin.window_size()) {
-                    if let Some(range) = plugin.check_slice(slice) {
-                        ranges.push(range);
-                    }
-                }
-    
-                // TODO maybe reuse `check_slice` but with a single item.
-                // `final_check` has more meaning than a single item being passed in.
-                if let Some(range) = collection_slice.last().and_then(|item| plugin.final_check(item.0)) {
-                    #[cfg(debug_assertions)]
-                    dbg!(&range);
-                    ranges.push(range);
-                }
-    
-                #[cfg(debug_assertions)]
-                dbg!(&ranges);
-    
-                let mut range_idx: usize = 0;
-    
-                if !ranges.is_empty() {
-                    debug_assert!( ranges.len() > 0 );
-    
-                    let mut i:usize = 0;
-    
-                    while i < collection_slice.len() {
-                        let pair = &collection_slice[i];
-                        if let Some(range) = ranges.get(range_idx) {
-                            if !range.contains(&pair.0) {
-                                plugin_collection.push(pair.1.to_owned());
-                                i += 1;
-                                continue;
-                            }
-    
-                            plugin_collection.extend_from_slice( &plugin.replace_slice(&collection_slice[range.clone()]) );
-    
-                            i += range.len();
-                            range_idx += 1;
-                        } else {
-                            #[cfg(debug_assertions)]
-                            dbg!(&pair);
-                            plugin_collection.push(pair.1.to_owned());
-                            i += 1;
-                            continue;
-                        }
-    
-                    }
-                } else {
-                    plugin_collection.extend(collection_slice.iter().map(|c| c.1.to_owned()));
-    
-                }
-
-                new_collection = plugin_collection;
-
-            }
-
-            assert!(new_collection.len() > 0);
             let mut html_output = String::new();
             html::push_html(&mut html_output,  new_collection.into_iter());
 
@@ -190,6 +101,108 @@ async fn generate_payload(path:String, state:Arc<State>) -> Result<Payload> {
     }
 
     Err(StatusCode::NOT_FOUND.into())
+}
+
+fn make_commonmark_parser(text: &str, state: Arc<State>) -> CmParser {
+    let mut md_opt = Options::empty();
+    if state.tables {
+        md_opt.insert(Options::ENABLE_TABLES);
+    }
+    if state.footnotes {
+        md_opt.insert(Options::ENABLE_FOOTNOTES);
+    }
+    if state.strikethrough {
+        md_opt.insert(Options::ENABLE_STRIKETHROUGH);
+    }
+    if state.smart_punctuation {
+        md_opt.insert(Options::ENABLE_SMART_PUNCTUATION);
+    }
+    if state.header_attributes {
+        md_opt.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+    }
+
+    CmParser::new_ext(text, md_opt)
+}
+
+fn process_commonmark_tokens<'a>(parser: CmParser<'a, 'a>) -> Vec<Event<'a>> {
+    let mut collection_vec:Vec<_> = (0..).zip(parser).collect();
+    let mut collection_slice = collection_vec.as_slice();
+    //let mut slice_len = collection_slice.len();
+    let mut plugins:Vec<Box<dyn Plugin>> = vec![Box::<HaxeRoundup>::default(), Box::new(Emoji)];
+    let mut new_collection:Vec<Event> = vec![];
+    let len = plugins.len();
+
+    for (index, plugin) in plugins.iter_mut().enumerate() {
+        if index != 0 && index < len {
+            collection_vec = (0..).zip(new_collection).collect();
+            collection_slice = collection_vec.as_slice();
+        }
+
+        new_collection = if let Some(ranges) = check_collection_with(plugin, collection_slice) {
+            rewrite_collection_with(plugin, collection_slice, ranges)
+        } else {
+            collection_slice.iter().map(|c| c.1.to_owned()).collect()
+
+        }
+
+    }
+
+    debug_assert!(!new_collection.is_empty());
+    new_collection
+}
+
+fn check_collection_with(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Event)]) -> Option<Vec<Range<usize>>> {
+    let mut ranges = Vec::new();
+    for slice in collection.windows(plugin.window_size()) {
+        if let Some(range) = plugin.check_slice(slice) {
+            ranges.push(range);
+        }
+    }
+
+    // TODO maybe reuse `check_slice` but with a single item.
+    // `final_check` has more meaning than a single item being passed in.
+    if let Some(range) = collection.last().and_then(|item| plugin.final_check(item.0)) {
+        #[cfg(debug_assertions)]
+        dbg!(&range);
+        ranges.push(range);
+    }
+
+    if ranges.is_empty() {
+        None
+    } else {
+        Some(ranges)
+    }
+}
+
+fn rewrite_collection_with<'a>(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Event<'a>)], ranges: Vec<Range<usize>>) -> Vec<Event<'a>> {
+    let mut idx:usize = 0;
+    let mut range_idx: usize = 0;
+    let mut plugin_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len() * plugin.window_size()) );
+    
+    while idx < collection.len() {
+        let pair = &collection[idx];
+        if let Some(range) = ranges.get(range_idx) {
+            if !range.contains(&pair.0) {
+                plugin_collection.push(pair.1.to_owned());
+                idx += 1;
+                continue;
+            }
+
+            plugin_collection.extend_from_slice( &plugin.replace_slice(&collection[range.clone()]) );
+
+            idx += range.len();
+            range_idx += 1;
+        } else {
+            #[cfg(debug_assertions)]
+            dbg!(&pair);
+            plugin_collection.push(pair.1.to_owned());
+            idx += 1;
+            continue;
+        }
+
+    }
+
+    plugin_collection
 }
 
 #[derive(Serialize, Deserialize, Debug)]

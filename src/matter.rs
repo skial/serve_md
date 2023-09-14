@@ -66,7 +66,7 @@ impl<'input> RefDefMatter<'input> {
             
             let lines = gray_matter
             .split(|c| c.eq(&b'\n'))
-            .map( |slice| str::from_utf8(&slice) )
+            .map( str::from_utf8 )
             .filter_map(|r| r.ok());
 
             // It would be nice to have regex syntax highlighting & compile time

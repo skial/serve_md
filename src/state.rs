@@ -67,9 +67,8 @@ impl State {
                     if let Ok(mut file) = File::open(path) {
                         let mut buf = String::new();
                         let _ = file.read_to_string(&mut buf);
-                        match State::try_from((buf.as_str(), valid_ext)) {
-                            Ok(ncli) => *self = ncli,
-                            _ => {}
+                        if let Ok(ncli) = State::try_from((buf.as_str(), valid_ext)) {
+                            *self = ncli;
                         }
                     }
                 }
