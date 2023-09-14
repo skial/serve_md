@@ -132,13 +132,13 @@ impl Plugin for Emoji {
         match slice {
             [(i, Event::Text(value))] => {
                 value
-                    .find(':').and_then(|idx| {
-                        value[idx+1..].find(':').map(|end| (idx+1..idx+end+1) )
+                    .find(':').and_then(|start| {
+                        value[start+1..].find(':').map(|end| (start+1..start+end+1) )
                 })
-                .and_then(|r| {
+                .and_then(|range| {
                     #[cfg(debug_assertions)]
-                    dbg!(&value[r.clone()]);
-                    emojis::get_by_shortcode(&value[r])
+                    dbg!(&value[range.clone()]);
+                    emojis::get_by_shortcode(&value[range])
                 } )
                 .map(|_| i.to_owned()..(i+1).to_owned())
 
@@ -158,15 +158,14 @@ impl Plugin for Emoji {
             [(_, event @ Event::Text(value))] => {
                 let pair = value
                 .find(':')
-                .and_then(|idx| {
-                        value[idx+1..].find(':').map(|end| (idx+1..idx+end+1) )
+                .and_then(|start| {
+                    value[start+1..].find(':').map(|end| (start+1..start+end+1) )
                 })
-                .and_then(|r| emojis::get_by_shortcode(&value[r.clone()]).map(|e| (r, e)) )
+                .and_then(|range| emojis::get_by_shortcode(&value[range.clone()]).map(|emoji| (range, emoji)) )
                 .map(|tp| (tp.0, CowStr::Borrowed(tp.1.as_str())));
-                if let Some(pair) = pair {
+                if let Some((range, emoji)) = pair {
                     // Include the `:` characters again.
-                    let range = (pair.0.start-1)..(pair.0.end+1);
-                    vec![Event::Text( value.replace(&value[range], &pair.1).into() )]
+                    vec![Event::Text( value.replace(&value[range.start-1..range.end+1], &emoji).into() )]
                 } else {
                     #[cfg(debug_assertions)]
                     dbg!(event);
