@@ -261,7 +261,7 @@ async fn generate_payload(path:String, state:Arc<Cli>) -> Result<Payload> {
     
                 // TODO maybe reuse `check_slice` but with a single item.
                 // `final_check` has more meaning than a single item being passed in.
-                if let Some(range) = plugin.final_check(collection_slice.last().unwrap().0) {
+                if let Some(range) = collection_slice.last().and_then(|item| plugin.final_check(item.0)) {
                     #[cfg(debug_assertions)]
                     dbg!(&range);
                     ranges.push(range);
