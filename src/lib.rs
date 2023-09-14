@@ -72,12 +72,12 @@ async fn generate_payload(path:String, state:Arc<State>) -> Result<Payload> {
         let mut input = fetch_md(&path).await.map_err(|_| StatusCode::NOT_FOUND)?;
         let mut pod:Pod = Pod::String("".to_owned());
 
-        if let Some(fm) = state.front_matter {
-            let tp = str::from_utf8(&input[..]).ok().and_then(|s| fm.as_pod(s));
-            if let Some((p, v)) = tp {
-                pod = p;
-                input = v;
-            }
+        let tp = state.front_matter.and_then(|fm| 
+            str::from_utf8(&input).ok().and_then(|s| fm.as_pod(s)) 
+        );
+        if let Some((p, v)) = tp {
+            pod = p;
+            input = v;
         }
 
         return if let Ok(s) = str::from_utf8(&input[..]) {
@@ -127,7 +127,6 @@ fn make_commonmark_parser(text: &str, state: Arc<State>) -> CmParser {
 fn process_commonmark_tokens<'a>(parser: CmParser<'a, 'a>) -> Vec<Event<'a>> {
     let mut collection_vec:Vec<_> = (0..).zip(parser).collect();
     let mut collection_slice = collection_vec.as_slice();
-    //let mut slice_len = collection_slice.len();
     let mut plugins:Vec<Box<dyn Plugin>> = vec![Box::<HaxeRoundup>::default(), Box::new(Emoji)];
     let mut new_collection:Vec<Event> = vec![];
     let len = plugins.len();
