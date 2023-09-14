@@ -151,7 +151,6 @@ async fn main() {
     // As far as I can tell, axum can't match paths with
     // file extensions? `:file.html` or `:file.md`.
     let routes = Router::new()
-        .route("/", get(root))
         .route("/:path", get({
             let shared_state = Arc::clone(&state);
             move |path| determine(path, shared_state)
@@ -163,10 +162,6 @@ async fn main() {
         .serve(routes.into_make_service())
         .await
         .unwrap();
-}
-
-async fn root() -> &'static str {
-    "hello world _"
 }
 
 async fn determine(Path(path):Path<String>, state:Arc<Cli>) -> Result<Response> {
