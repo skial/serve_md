@@ -46,7 +46,7 @@ pub async fn determine(Path(path):Path<String>, state:Arc<State>) -> Result<Resp
         let path = path.replace(&(".".to_owned() + &extension.to_string()), ".md");
         // Handle commonmark requests early
         if extension == &PayloadFormats::Markdown {
-            let buf = fetch_md(&path).await.map_err(|_| StatusCode::NOT_FOUND)?;
+            let buf = fetch_md(&path).await.or(Err(StatusCode::NOT_FOUND))?;
             return str::from_utf8(&buf)
                 .or(Err(StatusCode::BAD_REQUEST.into()))
                 .map(|s| s.to_string())
