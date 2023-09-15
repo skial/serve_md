@@ -1,5 +1,6 @@
 
 use crate::formats::*;
+use anyhow::anyhow;
 use clap::Parser as CliParser;
 use serde_derive::{Serialize, Deserialize};
 
@@ -15,40 +16,74 @@ use std::{
 #[derive(Debug, Default, CliParser, Deserialize, Serialize)]
 #[serde(default = "State::default")]
 pub struct State {
-    /// Set the root directory to search & serve .md files from.
+    // --- Http server options.
+    /// Set the root directory to serve .md files from
     #[arg(long)]
     pub root:Option<String>,
-    /// The port to bind the serve_md server too.
+    /// The port to bind the serve_md server too
     #[arg(long, default_value_t = 8083)]
     pub port:u16,
     
-    /// Enables parsing tables.
+    // --- Markdown options.
+    /// Enables parsing tables
     #[arg(short, long)]
     pub tables:bool,
-    /// Enables parsing footnotes.
+    /// Enables parsing footnotes
     #[arg(short, long)]
     pub footnotes:bool,
-    /// Enables parsing strikethrough.
+    /// Enables parsing strikethrough
     #[arg(short, long)]
     pub strikethrough:bool,
-    /// Enables parsing tasklists.
+    /// Enables parsing tasklists
     #[arg(short = 'l', long)]
     pub tasklists:bool,
-    /// Enables smart punctuation.
+    /// Enables smart punctuation
     #[arg(short = 'p', long)]
     pub smart_punctuation:bool,
-    /// Enables header attributes.
+    /// Enables header attributes
     #[arg(short = 'a', long)]
     pub header_attributes:bool,
-
-    /// The type of front matter.
+    /// The type of front matter
     #[arg(short = 'm', long, value_enum)]
     pub front_matter:Option<MatterFormats>,
 
-    /// Use a configuration file instead.
+    // --- Plugin options.
+    /// Enables parsing emoji shortcodes, using GitHub flavoured shortcodes
+    #[arg(short, long)]
+    pub emoji_shortcodes:bool,
+    /// Enables converting headers into collapsible sections using the <details> element
+    #[arg(short = 'k', long, value_parser = parse_collapsible_headers)]
+    pub collapsible_headers:Option<(u8, String)>,
+
+    // ---
+    /// Use a configuration file instead
     #[arg(short, long)]
     #[serde(skip)]
     config:Option<String>,
+}
+
+fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    #[cfg(debug_assertions)]
+    dbg!(s);
+    assert!(s.len() > 2);
+    let mut level = 0;
+    let mut iter = s.chars();
+    if let (Some('h'), Some(b)) = (iter.next(), iter.next()) {
+        if let Some(digit) = b.to_digit(10) {
+            level = digit as u8;
+        }
+        match iter.next() {
+            Some(':' | '=') => {},
+            Some(_) => {
+                return Err(anyhow!("Third character after `h{}` must be a colon `:` or equals sign `=`.", level).into());
+            },
+            None => {}
+        }
+    } else {
+        iter = s.chars();
+    }
+    
+    Ok((level, iter.as_str().to_string()))
 }
 
 impl State {

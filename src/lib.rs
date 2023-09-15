@@ -81,8 +81,9 @@ async fn generate_payload(path:String, state:Arc<State>) -> Result<Payload> {
         }
 
         return if let Ok(s) = str::from_utf8(&input[..]) {
-            let md_parser = make_commonmark_parser(s, state);
-            let new_collection = process_commonmark_tokens(md_parser);
+            let md_parser = make_commonmark_parser(s, &state);
+            let plugins = make_commonmark_plugins(&state);
+            let new_collection = process_commonmark_tokens(md_parser, plugins);
 
             let mut html_output = String::new();
             html::push_html(&mut html_output,  new_collection.into_iter());
@@ -103,7 +104,7 @@ async fn generate_payload(path:String, state:Arc<State>) -> Result<Payload> {
     Err(StatusCode::NOT_FOUND.into())
 }
 
-fn make_commonmark_parser(text: &str, state: Arc<State>) -> CmParser {
+fn make_commonmark_parser<'a>(text: &'a str, state: &'a Arc<State>) -> CmParser<'a, 'a> {
     let mut md_opt = Options::empty();
     if state.tables {
         md_opt.insert(Options::ENABLE_TABLES);
@@ -124,10 +125,21 @@ fn make_commonmark_parser(text: &str, state: Arc<State>) -> CmParser {
     CmParser::new_ext(text, md_opt)
 }
 
-fn process_commonmark_tokens<'a>(parser: CmParser<'a, 'a>) -> Vec<Event<'a>> {
+fn make_commonmark_plugins(state:&Arc<State>) -> Vec<Box<dyn Plugin>> {
+    let mut plugins: Vec<Box<dyn Plugin>> = vec![];
+    if state.emoji_shortcodes {
+        plugins.push(Box::new(Emoji));
+    }
+    if let Some(options) = &state.collapsible_headers {
+        plugins.push(Box::new(HaxeRoundup::new(options.0, options.1.to_owned())));
+    }
+    plugins
+}
+
+fn process_commonmark_tokens<'a>(parser: CmParser<'a, 'a>, mut plugins: Vec<Box<dyn Plugin>>) -> Vec<Event<'a>> {
     let mut collection_vec:Vec<_> = (0..).zip(parser).collect();
     let mut collection_slice = collection_vec.as_slice();
-    let mut plugins:Vec<Box<dyn Plugin>> = vec![Box::<HaxeRoundup>::default(), Box::new(Emoji)];
+    //let mut plugins:Vec<Box<dyn Plugin>> = vec![Box::<HaxeRoundup>::default(), Box::new(Emoji)];
     let mut new_collection:Vec<Event> = vec![];
     let len = plugins.len();
 
@@ -243,3 +255,4 @@ impl Payload {
         Err(StatusCode::BAD_REQUEST.into())
     }
 }
+

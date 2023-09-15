@@ -32,6 +32,14 @@ pub trait Plugin {
 #[derive(Default)]
 pub struct HaxeRoundup {
     range: Option<Range<usize>>,
+    level: u8,
+    text: String,
+}
+
+impl HaxeRoundup {
+    pub fn new(level: u8, text: String) -> HaxeRoundup {
+        HaxeRoundup { level: level, text: text, ..Default::default() }
+    }
 }
 
 impl Plugin for HaxeRoundup {
@@ -51,9 +59,9 @@ impl Plugin for HaxeRoundup {
             [
                 (a, Event::Start(Tag::Heading(lvl, _, _))), 
                 (_, Event::Start(Tag::Emphasis)),
-                (_, Event::Text(CowStr::Borrowed("in case you missed it"))),
+                (_, Event::Text(CowStr::Borrowed(v))),
                 (b, Event::End(Tag::Emphasis))
-            ] => if lvl >= &HeadingLevel::H5 {
+            ] => if (*lvl as u8) >= self.level && v == &self.text.as_str() {
                 if let Some(ref mut range) = self.range {
                     range.end = *b;
                     let r = range.clone();
