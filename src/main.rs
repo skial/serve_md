@@ -4,6 +4,7 @@ use std::{ sync::Arc, net::SocketAddr, };
 use axum::{ Router, routing::get, };
 use serve_md::state::State as Cli;
 use clap::Parser as CliParser;
+use tokio::signal;
 
 use serve_md::determine;
 
@@ -30,6 +31,34 @@ async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], state.port));
     axum::Server::bind(&addr)
         .serve(routes.into_make_service())
+        // @see https://github.com/tokio-rs/axum/blob/main/examples/graceful-shutdown/src/main.rs
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    println!("signal received, starting graceful shutdown");
 }
