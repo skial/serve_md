@@ -30,7 +30,7 @@ use gray_matter::Pod;
 use tokio::fs::{try_exists, read};
 use serde_derive::{Serialize, Deserialize};
 
-use crate::plugin::{HaxeRoundup, Emoji, Plugin};
+use crate::plugin::{CollapsibleHeaders, Emoji, Plugin};
 
 pub async fn determine(Path(path):Path<String>, state:Arc<State>) -> Result<Response> {
     #[cfg(debug_assertions)]
@@ -134,7 +134,7 @@ fn make_commonmark_plugins(state:&Arc<State>) -> Vec<Box<dyn Plugin>> {
         plugins.push(Box::new(Emoji));
     }
     if let Some(options) = &state.collapsible_headers {
-        plugins.push(Box::new(HaxeRoundup::new(options.0, options.1.to_owned())));
+        plugins.push(Box::new(CollapsibleHeaders::new(options.0, options.1.to_owned())));
     }
 
     plugins
@@ -143,7 +143,6 @@ fn make_commonmark_plugins(state:&Arc<State>) -> Vec<Box<dyn Plugin>> {
 fn process_commonmark_tokens<'a>(parser: CmParser<'a, 'a>, mut plugins: Vec<Box<dyn Plugin>>) -> Vec<Event<'a>> {
     let mut collection_vec:Vec<_> = (0..).zip(parser).collect();
     let mut collection_slice = collection_vec.as_slice();
-    //let mut plugins:Vec<Box<dyn Plugin>> = vec![Box::<HaxeRoundup>::default(), Box::new(Emoji)];
     let mut new_collection:Vec<Event> = vec![];
     let len = plugins.len();
 

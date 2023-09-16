@@ -30,19 +30,19 @@ pub trait Plugin {
 }
 
 #[derive(Default)]
-pub struct HaxeRoundup {
+pub struct CollapsibleHeaders {
     range: Option<Range<usize>>,
     level: u8,
     text: String,
 }
 
-impl HaxeRoundup {
-    pub fn new(level: u8, text: String) -> HaxeRoundup {
-        HaxeRoundup { level: level, text: text, ..Default::default() }
+impl CollapsibleHeaders {
+    pub fn new(level: u8, text: String) -> CollapsibleHeaders {
+        CollapsibleHeaders { level, text, ..Default::default() }
     }
 }
 
-impl Plugin for HaxeRoundup {
+impl Plugin for CollapsibleHeaders {
     fn window_size(&self) -> usize {
         4
     }
