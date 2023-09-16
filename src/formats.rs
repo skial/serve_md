@@ -1,10 +1,9 @@
-use anyhow::{Error, Result, anyhow};
 use clap::ValueEnum;
-use std::fmt::Display;
+use core::fmt::Display;
+use crate::matter::RefDefMatter;
+use anyhow::{Error, Result, anyhow};
 use serde_derive::{Deserialize, Serialize};
 use gray_matter::{Pod, ParsedEntity, Matter, engine::{YAML, JSON, TOML}};
-
-use crate::matter::*;
 
 #[repr(u8)]
 pub enum ConfigFormats {
@@ -15,12 +14,12 @@ pub enum ConfigFormats {
 
 impl TryFrom<&str> for ConfigFormats {
     type Error = String; // TODO use anyhow
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &str) -> core::result::Result<Self, Self::Error> {
         match value {
             "json"      => Ok(ConfigFormats::Json),
             "toml"      => Ok(ConfigFormats::Toml),
             "yaml"      => Ok(ConfigFormats::Yaml),
-            x           => Err(format!("{} extension not supported.", x)),
+            x           => Err(format!("{x} extension not supported.")),
         }
     }
 }
@@ -35,7 +34,7 @@ pub enum MatterFormats {
 }
 
 impl Display for MatterFormats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             MatterFormats::Refdef => write!(f, "refdef"),
             _ => {
@@ -45,7 +44,7 @@ impl Display for MatterFormats {
                         gf.fmt(f)
                     },
                     Err(_) => {
-                        Err(std::fmt::Error{})
+                        Err(core::fmt::Error{})
                     }
                 }
             }
@@ -93,7 +92,7 @@ pub enum PayloadFormats {
 }
 
 impl Display for PayloadFormats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             PayloadFormats::Html     => write!(f, "html"),
             PayloadFormats::Markdown => write!(f, "md"),
@@ -104,7 +103,7 @@ impl Display for PayloadFormats {
                         gf.fmt(f)
                     },
                     Err(_) => {
-                        Err(std::fmt::Error{})
+                        Err(core::fmt::Error{})
                     }
                 }
             }
@@ -114,7 +113,7 @@ impl Display for PayloadFormats {
 
 impl TryFrom<&str> for PayloadFormats {
     type Error = Error;
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &str) -> core::result::Result<Self, Self::Error> {
         match value {
             "json"      => Ok(PayloadFormats::Json),
             "toml"      => Ok(PayloadFormats::Toml),
@@ -143,7 +142,7 @@ pub enum GenericFormats {
 }
 
 impl Display for GenericFormats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", match self {
             GenericFormats::Json     => "json",
             GenericFormats::Yaml     => "yaml",
@@ -158,7 +157,7 @@ impl Display for GenericFormats {
 
 impl TryFrom<&u8> for GenericFormats {
     type Error = anyhow::Error;
-    fn try_from(value: &u8) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &u8) -> core::result::Result<Self, Self::Error> {
         match value {
             x if x == &(GenericFormats::Json      as u8) => Ok(GenericFormats::Json),
             x if x == &(GenericFormats::Yaml      as u8) => Ok(GenericFormats::Yaml),
@@ -174,7 +173,7 @@ impl TryFrom<&u8> for GenericFormats {
 
 impl TryFrom<&PayloadFormats> for GenericFormats {
     type Error = anyhow::Error;
-    fn try_from(value: &PayloadFormats) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &PayloadFormats) -> core::result::Result<Self, Self::Error> {
         match value {
             PayloadFormats::Html | PayloadFormats::Markdown => Err(anyhow!("{} is not a GenericFormat.", value)),
             PayloadFormats::Json     => Ok(GenericFormats::Json),
@@ -190,7 +189,7 @@ impl TryFrom<&PayloadFormats> for GenericFormats {
 
 impl TryFrom<&MatterFormats> for GenericFormats {
     type Error = anyhow::Error;
-    fn try_from(value: &MatterFormats) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &MatterFormats) -> core::result::Result<Self, Self::Error> {
         match value {
             MatterFormats::Refdef => Err(anyhow!("{} is not a GenericFormat.", value)),
             MatterFormats::Json     => Ok(GenericFormats::Json),

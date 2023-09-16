@@ -5,11 +5,13 @@ pub mod state;
 
 use std::{
     str,
-    io::{Error, ErrorKind}, 
     sync::Arc,
-    ops::Range, 
+    ffi::OsStr,
     path::Path as SysPath, 
+    io::{Error, ErrorKind}, 
 };
+
+use core::ops::Range;
 
 use axum::{
     extract::Path, 
@@ -24,9 +26,10 @@ use pulldown_cmark::{
     Parser as CmParser,
 };
 
-use formats::*;
 use state::State;
 use gray_matter::Pod;
+use formats::PayloadFormats;
+use serde_pickle::SerOptions;
 use tokio::fs::{try_exists, read};
 use serde_derive::{Serialize, Deserialize};
 
@@ -38,17 +41,17 @@ pub async fn determine(Path(path):Path<String>, state:Arc<State>) -> Result<Resp
     
     let path_ext = SysPath::new(&path).extension();
     let extension = path_ext
-    .and_then(|s| s.to_str())
+    .and_then(OsStr::to_str)
     .and_then(|s| PayloadFormats::try_from(s).ok());
 
-    if let Some(ref extension) = extension {
+    if let Some(extension) = &extension {
         let path = path.replace(&(".".to_owned() + &extension.to_string()), ".md");
         // Handle commonmark requests early
         if extension == &PayloadFormats::Markdown {
             let buf = fetch_md(&path).await.or(Err(StatusCode::NOT_FOUND))?;
             return str::from_utf8(&buf)
                 .or(Err(StatusCode::BAD_REQUEST.into()))
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .map(|s| s.into_response())
 
         }
@@ -69,7 +72,7 @@ async fn fetch_md(path: &String) -> std::io::Result<Vec<u8>> {
 async fn generate_payload(path:String, state:Arc<State>) -> Result<Payload> {
     if tokio::fs::try_exists(&path).await.map_err(|_| StatusCode::NOT_FOUND)? {
         let mut input = fetch_md(&path).await.map_err(|_| StatusCode::NOT_FOUND)?;
-        let mut pod:Pod = Pod::String("".to_owned());
+        let mut pod:Pod = Pod::String(String::new());
 
         let tp = state.front_matter.and_then(|fm| 
             str::from_utf8(&input).ok().and_then(|s| fm.as_pod(s)) 
@@ -103,7 +106,7 @@ async fn generate_payload(path:String, state:Arc<State>) -> Result<Payload> {
     Err(StatusCode::NOT_FOUND.into())
 }
 
-fn make_commonmark_parser<'a>(text: &'a str, state: &'a Arc<State>) -> CmParser<'a, 'a> {
+fn make_commonmark_parser<'input>(text: &'input str, state: &'input Arc<State>) -> CmParser<'input, 'input> {
     let mut md_opt = Options::empty();
     if state.tables {
         md_opt.insert(Options::ENABLE_TABLES);
@@ -135,19 +138,21 @@ fn make_commonmark_plugins(state:&Arc<State>) -> Vec<Box<dyn Plugin>> {
         plugins.push(Box::new(Emoji));
     }
     if let Some(options) = &state.collapsible_headers {
-        plugins.push(Box::new(CollapsibleHeaders::new(options.0, options.1.to_owned())));
+        plugins.push(Box::new(CollapsibleHeaders::new(options.0, options.1.clone())));
     }
 
     plugins
 }
 
-fn process_commonmark_tokens<'a>(parser: CmParser<'a, 'a>, mut plugins: Vec<Box<dyn Plugin>>) -> Vec<Event<'a>> {
+fn process_commonmark_tokens<'input>(parser: CmParser<'input, 'input>, mut plugins: Vec<Box<dyn Plugin>>) -> Vec<Event<'input>> {
     let mut collection_vec:Vec<_> = (0..).zip(parser).collect();
     let mut collection_slice = collection_vec.as_slice();
     let mut new_collection:Vec<Event> = vec![];
     let len = plugins.len();
 
-    if !plugins.is_empty() {
+    if plugins.is_empty() {
+        new_collection = collection_slice.iter().map(|c| c.1.clone()).collect();
+    } else {
         for (index, plugin) in plugins.iter_mut().enumerate() {
             if index != 0 && index < len {
                 collection_vec = (0..).zip(new_collection).collect();
@@ -155,15 +160,13 @@ fn process_commonmark_tokens<'a>(parser: CmParser<'a, 'a>, mut plugins: Vec<Box<
             }
 
             new_collection = if let Some(ranges) = check_collection_with(plugin, collection_slice) {
-                rewrite_collection_with(plugin, collection_slice, ranges)
+                rewrite_collection_with(plugin, collection_slice, &ranges)
             } else {
-                collection_slice.iter().map(|c| c.1.to_owned()).collect()
+                collection_slice.iter().map(|c| c.1.clone()).collect()
 
             }
 
         }
-    } else {
-        new_collection = collection_slice.iter().map(|c| c.1.to_owned()).collect();
     }
 
     debug_assert!(!new_collection.is_empty());
@@ -193,7 +196,7 @@ fn check_collection_with(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Eve
     }
 }
 
-fn rewrite_collection_with<'a>(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Event<'a>)], ranges: Vec<Range<usize>>) -> Vec<Event<'a>> {
+fn rewrite_collection_with<'input>(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Event<'input>)], ranges: &[Range<usize>]) -> Vec<Event<'input>> {
     let mut idx:usize = 0;
     let mut range_idx: usize = 0;
     let mut plugin_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len() * plugin.window_size()) );
@@ -202,7 +205,7 @@ fn rewrite_collection_with<'a>(plugin: &mut Box<dyn Plugin>, collection: &[(usiz
         let pair = &collection[idx];
         if let Some(range) = ranges.get(range_idx) {
             if !range.contains(&pair.0) {
-                plugin_collection.push(pair.1.to_owned());
+                plugin_collection.push(pair.1.clone());
                 idx += 1;
                 continue;
             }
@@ -214,7 +217,7 @@ fn rewrite_collection_with<'a>(plugin: &mut Box<dyn Plugin>, collection: &[(usiz
         } else {
             #[cfg(debug_assertions)]
             dbg!(&pair);
-            plugin_collection.push(pair.1.to_owned());
+            plugin_collection.push(pair.1.clone());
             idx += 1;
             continue;
         }
@@ -252,7 +255,7 @@ impl Payload {
                 }
             }
             PayloadFormats::Pickle => {
-                if let Ok(pickle) = serde_pickle::to_vec(&self, Default::default()) {
+                if let Ok(pickle) = serde_pickle::to_vec(&self, SerOptions::default()) {
                     return Ok(pickle.into_response())
                 }
             }

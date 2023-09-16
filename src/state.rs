@@ -1,14 +1,15 @@
 
-use crate::formats::*;
 use anyhow::anyhow;
 use clap::Parser as CliParser;
 use serde_derive::{Serialize, Deserialize};
+use crate::formats::{ConfigFormats, MatterFormats};
 
 use std::{
     str, 
     env,
     fs::File, 
     io::Read,
+    ffi::OsStr,
     path::Path as SysPath, 
 };
 
@@ -74,11 +75,10 @@ fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error
             level = digit as u8;
         }
         match iter.next() {
-            Some(':' | '=') => {},
+            Some(':' | '=') | None => {},
             Some(_) => {
                 return Err(anyhow!("Third character after `h{}` must be a colon `:` or equals sign `=`.", level).into());
             },
-            None => {}
         }
     } else {
         iter = s.chars();
@@ -96,7 +96,7 @@ impl State {
         if let Some(config) = &self.config {
             let path = SysPath::new(&config);
             let valid_ext = path.extension()
-            .and_then(|s| s.to_str())
+            .and_then(OsStr::to_str)
             .and_then(|s| ConfigFormats::try_from(s).ok());
             match valid_ext {
                 Some(valid_ext) if path.exists() => {
@@ -111,10 +111,10 @@ impl State {
                     }
                 }
                 Some(_) if !path.exists() => {
-                    println!("The file {} does not exist. Continuing with defaults.", path.display())
+                    println!("The file {} does not exist. Continuing with defaults.", path.display());
                 }
                 Some(_) | None => {
-                    println!("Invalid value passed into --config. Make sure the file type is one of .json, .yaml or .toml. Continuing with defaults.")
+                    println!("Invalid value passed into --config. Make sure the file type is one of .json, .yaml or .toml. Continuing with defaults.");
                 }
             }
         }
@@ -137,7 +137,7 @@ impl State {
 
 impl TryFrom<(&str, ConfigFormats)> for State {
     type Error = anyhow::Error;
-    fn try_from(value: (&str, ConfigFormats)) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: (&str, ConfigFormats)) -> core::result::Result<Self, Self::Error> {
         match value.1 {
             ConfigFormats::Json => Ok(serde_json::from_str(value.0)?),
             ConfigFormats::Toml => Ok(toml::from_str(value.0)?),

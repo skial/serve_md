@@ -1,6 +1,7 @@
 use regex::Match;
 use gray_matter::Pod;
-use std::{collections::HashMap, ops::Range, str};
+use core::ops::Range;
+use std::{collections::HashMap, str};
 
 #[derive(Debug, Clone)]
 pub struct RefDefMatter<'input> {
@@ -38,9 +39,9 @@ impl<'input> RefDefMatter<'input> {
                 _ if til_end => {
                     continue;
                 },
-                _x => {
+                x => {
                     #[cfg(debug_assertions)]
-                    dbg!(i, str::from_utf8(&[_x]).unwrap());
+                    dbg!(i, str::from_utf8(&[x]).unwrap());
                     break;
                 }
             }
@@ -60,7 +61,7 @@ impl<'input> RefDefMatter<'input> {
     pub fn parse_gray_matter(&'input mut self) -> Option<Pod> {
         use regex::Regex;
 
-        if let Some(ref r) = self.range {
+        if let Some(r) = &self.range {
             // Currently confused why removing `gray_matter` & `lines`, merging
             // into a single iterator causes the inferred type to change & fail
             // type checking. What changes when assigning vs a long iter chain?
@@ -69,7 +70,7 @@ impl<'input> RefDefMatter<'input> {
             let lines = gray_matter
             .split(|c| c.eq(&b'\n'))
             .map( str::from_utf8 )
-            .filter_map(|r| r.ok());
+            .filter_map(Result::ok);
 
             // It would be nice to have regex syntax highlighting & compile time
             // checks to make sure its valid. Clippy? cargo extension?? IDE extension???

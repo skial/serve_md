@@ -1,4 +1,4 @@
-use std::ops::Range;
+use core::ops::Range;
 use pulldown_cmark::{
     CowStr, Event, Tag, HeadingLevel, 
 };
@@ -26,7 +26,7 @@ pub trait Plugin {
     call to `check_slice`, which will be replaced by the returned array 
     of `Event`'s.
     */
-    fn replace_slice<'a>(&self, slice: &[(usize, Event<'a>)]) -> Vec<Event<'a>>;
+    fn replace_slice<'input>(&self, slice: &[(usize, Event<'input>)]) -> Vec<Event<'input>>;
 }
 
 #[derive(Default)]
@@ -54,7 +54,7 @@ impl Plugin for CollapsibleHeaders {
     fn check_slice(&mut self, slice: &[(usize, Event)]) -> Option<Range<usize>> {
         debug_assert!(slice.len() == self.window_size());
         #[cfg(debug_assertions)]
-        println!("{:?}", slice);
+        println!("{slice:?}");
         match slice {
             [
                 (a, Event::Start(Tag::Heading(lvl, _, _))), 
@@ -104,9 +104,9 @@ impl Plugin for CollapsibleHeaders {
         self.range.clone()
     }
 
-    fn replace_slice<'a>(&self, slice: &[(usize, Event<'a>)]) -> Vec<Event<'a>> {
+    fn replace_slice<'input>(&self, slice: &[(usize, Event<'input>)]) -> Vec<Event<'input>> {
         #[cfg(debug_assertions)]
-        println!("{:?}", slice);
+        println!("{slice:?}");
         let mut r = vec![
             Event::Html(CowStr::Borrowed("<details open>")),
             Event::SoftBreak,
@@ -115,10 +115,10 @@ impl Plugin for CollapsibleHeaders {
         if let (Some((_, a)), Some((_, b)), Some((_, c))) 
              = (slice.get(1), slice.get(2), slice.get(3)) 
         {
-            r.extend([a.to_owned(), b.to_owned(), c.to_owned()]);
+            r.extend([a.clone(), b.clone(), c.clone()]);
         }
         r.push(Event::Html(CowStr::Borrowed("</summary>")));
-        r.extend(slice.iter().skip(5).map(|t| t.1.to_owned()));
+        r.extend(slice.iter().skip(5).map(|t| t.1.clone()));
         r.push(Event::Html(CowStr::Borrowed("</details>")));
         r
     }
@@ -141,7 +141,7 @@ impl Plugin for Emoji {
             [(i, Event::Text(value))] => {
                 value
                 .find(':').and_then(|start| {
-                    value[start+1..].find(':').map(|end| (start+1..start+end+1) )
+                    value[start+1..].find(':').map(|end| ((start+1)..(start+end+1)) )
                 })
                 .and_then(|range| {
                     #[cfg(debug_assertions)]
@@ -161,27 +161,27 @@ impl Plugin for Emoji {
         None
     }
 
-    fn replace_slice<'a>(&self, slice: &[(usize, Event<'a>)]) -> Vec<Event<'a>> {
+    fn replace_slice<'input>(&self, slice: &[(usize, Event<'input>)]) -> Vec<Event<'input>> {
         match slice {
             [(_, event @ Event::Text(value))] => {
                 let pair = value
                 .find(':')
                 .and_then(|start| {
-                    value[start+1..].find(':').map(|end| (start+1..start+end+1) )
+                    value[start+1..].find(':').map(|end| ((start+1)..(start+end+1)) )
                 })
                 .and_then(|range| emojis::get_by_shortcode(&value[range.clone()]).map(|emoji| (range, emoji)) )
                 .map(|tp| (tp.0, CowStr::Borrowed(tp.1.as_str())));
                 if let Some((range, emoji)) = pair {
                     // Include the `:` characters again.
-                    vec![Event::Text( value.replace(&value[range.start-1..range.end+1], &emoji).into() )]
+                    vec![Event::Text( value.replace(&value[(range.start-1)..(range.end+1)], &emoji).into() )]
                 } else {
                     #[cfg(debug_assertions)]
                     dbg!(event);
-                    vec![event.to_owned()]
+                    vec![event.clone()]
                 }
             },
             _ => {
-                slice.iter().map(|t| t.1.to_owned() ).collect()
+                slice.iter().map(|t| t.1.clone() ).collect()
             }
         }
     }
