@@ -123,6 +123,7 @@ fn make_commonmark_parser<'a>(text: &'a str, state: &'a Arc<State>) -> CmParser<
     if state.tasklists {
         md_opt.insert(Options::ENABLE_TASKLISTS);
     }
+    #[cfg(debug_assertions)]
     dbg!(md_opt);
 
     CmParser::new_ext(text, md_opt)
