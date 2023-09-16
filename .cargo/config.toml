@@ -1,0 +1,21 @@
+[alias]
+# @see https://users.rust-lang.org/t/global-configuration-of-clippy/79238/2
+chatty = """clippy -- -W clippy::pedantic -W clippy::correctness \
+-W clippy::perf \
+-W clippy::style -W clippy::alloc_instead_of_core \
+-W clippy::arithmetic_side_effects \
+-W clippy::as_underscore \
+-W clippy::clone_on_ref_ptr \
+-W clippy::default_numeric_fallback \
+-W clippy::else_if_without_else \
+-W clippy::format_push_string \
+-W clippy::if_then_some_else_none \
+-W clippy::indexing_slicing \
+-W clippy::let_underscore_must_use \
+-W clippy::let_underscore_untyped \
+-W clippy::map_err_ignore \
+-W clippy::std_instead_of_core \
+-W clippy::rc_buffer \
+-W clippy::ref_patterns \
+-W clippy::single_char_lifetime_names \
+"""
