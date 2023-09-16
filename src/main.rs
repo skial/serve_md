@@ -29,6 +29,7 @@ async fn main() {
     ;
 
     let addr = SocketAddr::from(([127, 0, 0, 1], state.port));
+    println!("starting server on 127.0.0.1:{}", state.port);
     axum::Server::bind(&addr)
         .serve(routes.into_make_service())
         // @see https://github.com/tokio-rs/axum/blob/main/examples/graceful-shutdown/src/main.rs
