@@ -47,12 +47,14 @@ impl<'input> RefDefMatter<'input> {
         }
 
         #[cfg(debug_assertions)]
-        dbg!(&self.range);
-        #[cfg(debug_assertions)]
-        if let Some(ref mut r) = self.range {
-            dbg!(str::from_utf8(&self.slice[r.start..r.end]).unwrap());
-
+        {
+            dbg!(&self.range);
+            if let Some(ref mut r) = self.range {
+                dbg!(str::from_utf8(&self.slice[r.start..r.end]).unwrap());
+    
+            }
         }
+        
     }
 
     pub fn parse_gray_matter(&'input mut self) -> Option<Pod> {
@@ -76,12 +78,8 @@ impl<'input> RefDefMatter<'input> {
 
                 lines
                 .filter_map(|line| {
-                    if re.is_match(line) {
-                        Some(re.captures_iter(line))
-    
-                    } else {
-                        None
-                    }
+                    re.is_match(line)
+                    .then_some(re.captures_iter(line))
                 })
                 .flatten()
                 .map( |value| {
@@ -132,16 +130,12 @@ impl<'input> RefDefMatter<'input> {
     fn regex_to_hash_entries(uri:Match, title:Option<Match>) -> HashMap<String, Pod> {
         [
             Some(("uri".to_string(), Pod::String(uri.as_str().to_string()))),
-            if title.is_some() {
-                Some(("title".to_string(), title
-                    .map_or(
-                        Pod::Null,
-                        |t| Pod::String(t.as_str().to_string())
-                    )
-                ))
-            } else {
-                None
-            }
+            title.is_some().then_some(("title".to_string(), title
+                .map_or(
+                    Pod::Null,
+                    |t| Pod::String(t.as_str().to_string())
+                )
+            )) 
         ]
         .into_iter()
         .flatten()
