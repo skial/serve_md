@@ -62,6 +62,7 @@ pub struct State {
     config:Option<String>,
 }
 
+// @see https://github.com/clap-rs/clap/blob/7f8df272d90afde89e40de086492e1c9f5749897/examples/typed-derive.rs#L24
 fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error::Error + Send + Sync + 'static>> {
     #[cfg(debug_assertions)]
     dbg!(s);
@@ -105,6 +106,8 @@ impl State {
                         if let Ok(ncli) = State::try_from((buf.as_str(), valid_ext)) {
                             *self = ncli;
                         }
+                        #[cfg(debug_assertions)]
+                        dbg!(toml::to_string_pretty(&self).ok());
                     }
                 }
                 Some(_) if !path.exists() => {

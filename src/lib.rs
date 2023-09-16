@@ -143,19 +143,23 @@ fn process_commonmark_tokens<'a>(parser: CmParser<'a, 'a>, mut plugins: Vec<Box<
     let mut new_collection:Vec<Event> = vec![];
     let len = plugins.len();
 
-    for (index, plugin) in plugins.iter_mut().enumerate() {
-        if index != 0 && index < len {
-            collection_vec = (0..).zip(new_collection).collect();
-            collection_slice = collection_vec.as_slice();
+    if !plugins.is_empty() {
+        for (index, plugin) in plugins.iter_mut().enumerate() {
+            if index != 0 && index < len {
+                collection_vec = (0..).zip(new_collection).collect();
+                collection_slice = collection_vec.as_slice();
+            }
+
+            new_collection = if let Some(ranges) = check_collection_with(plugin, collection_slice) {
+                rewrite_collection_with(plugin, collection_slice, ranges)
+            } else {
+                collection_slice.iter().map(|c| c.1.to_owned()).collect()
+
+            }
+
         }
-
-        new_collection = if let Some(ranges) = check_collection_with(plugin, collection_slice) {
-            rewrite_collection_with(plugin, collection_slice, ranges)
-        } else {
-            collection_slice.iter().map(|c| c.1.to_owned()).collect()
-
-        }
-
+    } else {
+        new_collection = collection_slice.iter().map(|c| c.1.to_owned()).collect();
     }
 
     debug_assert!(!new_collection.is_empty());
