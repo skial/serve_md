@@ -140,8 +140,8 @@ impl Plugin for Emoji {
         match slice {
             [(i, Event::Text(value))] => {
                 value
-                    .find(':').and_then(|start| {
-                        value[start+1..].find(':').map(|end| (start+1..start+end+1) )
+                .find(':').and_then(|start| {
+                    value[start+1..].find(':').map(|end| (start+1..start+end+1) )
                 })
                 .and_then(|range| {
                     #[cfg(debug_assertions)]
