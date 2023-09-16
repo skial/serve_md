@@ -37,7 +37,7 @@ pub enum MatterFormats {
 impl Display for MatterFormats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MatterFormats::Refdef     => write!(f, "refdef"),
+            MatterFormats::Refdef => write!(f, "refdef"),
             _ => {
                 let x:Result<GenericFormats, _> = self.try_into();
                 match x {
