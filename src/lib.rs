@@ -11,8 +11,6 @@ use std::{
     path::Path as SysPath, 
 };
 
-use tokio::fs::{try_exists, read};
-
 use axum::{
     extract::Path, 
     http::StatusCode, 
@@ -29,6 +27,7 @@ use pulldown_cmark::{
 use formats::*;
 use state::State;
 use gray_matter::Pod;
+use tokio::fs::{try_exists, read};
 use serde_derive::{Serialize, Deserialize};
 
 use crate::plugin::{HaxeRoundup, Emoji, Plugin};
@@ -121,6 +120,10 @@ fn make_commonmark_parser<'a>(text: &'a str, state: &'a Arc<State>) -> CmParser<
     if state.header_attributes {
         md_opt.insert(Options::ENABLE_HEADING_ATTRIBUTES);
     }
+    if state.tasklists {
+        md_opt.insert(Options::ENABLE_TASKLISTS);
+    }
+    dbg!(md_opt);
 
     CmParser::new_ext(text, md_opt)
 }
@@ -133,6 +136,7 @@ fn make_commonmark_plugins(state:&Arc<State>) -> Vec<Box<dyn Plugin>> {
     if let Some(options) = &state.collapsible_headers {
         plugins.push(Box::new(HaxeRoundup::new(options.0, options.1.to_owned())));
     }
+
     plugins
 }
 

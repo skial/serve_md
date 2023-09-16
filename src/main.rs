@@ -1,15 +1,7 @@
 #![allow(clippy::pedantic, clippy::correctness, clippy::perf, clippy::style, clippy::restriction)]
 
-use std::{
-    sync::Arc,
-    net::SocketAddr,
-};
-
-use axum::{ 
-    Router,
-    routing::get,
-};
-
+use std::{ sync::Arc, net::SocketAddr, };
+use axum::{ Router, routing::get, };
 use serve_md::state::State as Cli;
 use clap::Parser as CliParser;
 
