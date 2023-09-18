@@ -141,7 +141,7 @@ impl Plugin for Emoji {
             [(i, Event::Text(value))] => {
                 value
                 .find(':').and_then(|start| {
-                    value[start+1..].find(':').map(|end| ((start+1)..(start+end+1)) )
+                    value[start+1..].find(':').map(|end| ((start + 1)..=(start + end)) )
                 })
                 .and_then(|range| {
                     #[cfg(debug_assertions)]
@@ -167,13 +167,13 @@ impl Plugin for Emoji {
                 let pair = value
                 .find(':')
                 .and_then(|start| {
-                    value[start+1..].find(':').map(|end| ((start+1)..(start+end+1)) )
+                    value[start+1..].find(':').map(|end| ((start + 1)..=(start + end)))
                 })
                 .and_then(|range| emojis::get_by_shortcode(&value[range.clone()]).map(|emoji| (range, emoji)) )
                 .map(|tp| (tp.0, CowStr::Borrowed(tp.1.as_str())));
                 if let Some((range, emoji)) = pair {
                     // Include the `:` characters again.
-                    vec![Event::Text( value.replace(&value[(range.start-1)..(range.end+1)], &emoji).into() )]
+                    vec![Event::Text( value.replace(&value[(range.start() - 1)..=*range.end() + 1], &emoji).into() )]
                 } else {
                     #[cfg(debug_assertions)]
                     dbg!(event);
