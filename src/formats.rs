@@ -13,13 +13,13 @@ pub enum ConfigFormats {
 }
 
 impl TryFrom<&str> for ConfigFormats {
-    type Error = String; // TODO use anyhow
+    type Error = anyhow::Error;
     fn try_from(value: &str) -> core::result::Result<Self, Self::Error> {
         match value {
             "json"      => Ok(ConfigFormats::Json),
             "toml"      => Ok(ConfigFormats::Toml),
             "yaml"      => Ok(ConfigFormats::Yaml),
-            x           => Err(format!("{x} extension not supported.")),
+            x           => Err(anyhow!("{x} extension not supported. Use one of json, toml or yaml.")),
         }
     }
 }

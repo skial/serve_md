@@ -1,9 +1,10 @@
 [alias]
+# remove lints
+# -W clippy::arithmetic_side_effects \
 # @see https://users.rust-lang.org/t/global-configuration-of-clippy/79238/2
 chatty = """clippy -- -W clippy::pedantic -W clippy::correctness \
 -W clippy::perf \
 -W clippy::style -W clippy::alloc_instead_of_core \
--W clippy::arithmetic_side_effects \
 -W clippy::as_underscore \
 -W clippy::clone_on_ref_ptr \
 -W clippy::default_numeric_fallback \

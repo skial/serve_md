@@ -35,6 +35,11 @@ use serde_derive::{Serialize, Deserialize};
 
 use crate::plugin::{CollapsibleHeaders, Emoji, Plugin};
 
+/// # Errors
+/// 
+/// Will return:
+/// - `StatusCode::NOT_FOUND` for unresolved files.
+/// - `StatusCode::BAD_REQUEST` for files not valid UTF8.
 pub async fn determine(Path(path):Path<String>, state:Arc<State>) -> Result<Response> {
     #[cfg(debug_assertions)]
     dbg!(&path);
@@ -52,7 +57,7 @@ pub async fn determine(Path(path):Path<String>, state:Arc<State>) -> Result<Resp
             return str::from_utf8(&buf)
                 .or(Err(StatusCode::BAD_REQUEST.into()))
                 .map(ToString::to_string)
-                .map(|s| s.into_response())
+                .map(IntoResponse::into_response)
 
         }
         return generate_payload(path, state).await?.into_response_for(extension);
@@ -196,9 +201,14 @@ fn check_collection_with(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Eve
     }
 }
 
+#[allow(clippy::indexing_slicing)]
 fn rewrite_collection_with<'input>(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Event<'input>)], ranges: &[Range<usize>]) -> Vec<Event<'input>> {
     let mut idx:usize = 0;
     let mut range_idx: usize = 0;
+
+    debug_assert!( !ranges.is_empty() );
+    debug_assert!( ranges.iter().fold(0, |acc, r| acc + r.len()) < collection.len() );
+
     let mut plugin_collection:Vec<Event<>> = Vec::with_capacity( collection.len() + (ranges.len() * plugin.window_size()) );
     
     while idx < collection.len() {
@@ -211,7 +221,7 @@ fn rewrite_collection_with<'input>(plugin: &mut Box<dyn Plugin>, collection: &[(
             }
 
             plugin_collection.extend_from_slice( &plugin.replace_slice(&collection[range.clone()]) );
-
+            
             idx += range.len();
             range_idx += 1;
         } else {
@@ -219,7 +229,6 @@ fn rewrite_collection_with<'input>(plugin: &mut Box<dyn Plugin>, collection: &[(
             dbg!(&pair);
             plugin_collection.push(pair.1.clone());
             idx += 1;
-            continue;
         }
 
     }

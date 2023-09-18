@@ -95,26 +95,31 @@ impl State {
     pub fn load_config(&mut self) {
         if let Some(config) = &self.config {
             let path = SysPath::new(&config);
-            let valid_ext = path.extension()
+            let mut buf = String::new();
+            let possible_state = path.extension()
             .and_then(OsStr::to_str)
-            .and_then(|s| ConfigFormats::try_from(s).ok());
-            match valid_ext {
-                Some(valid_ext) if path.exists() => {
-                    if let Ok(mut file) = File::open(path) {
-                        let mut buf = String::new();
-                        let _ = file.read_to_string(&mut buf);
-                        if let Ok(ncli) = State::try_from((buf.as_str(), valid_ext)) {
-                            *self = ncli;
-                        }
-                        #[cfg(debug_assertions)]
-                        dbg!(toml::to_string_pretty(&self).ok());
-                    }
+            .ok_or_else(|| anyhow!("Unable to convert the path {} which is of type `OsStr`, to `&str`.", path.display()))
+            .and_then(|s| ConfigFormats::try_from(s))
+            .and_then(|ext| {
+                if path.exists() {
+                    File::open(path)
+                    .and_then(|mut file| file.read_to_string(&mut buf))
+                    .map_err(|error| anyhow!(error.to_string()))
+                    .and_then(|_| State::try_from((buf.as_str(), ext)) )
+                } else {
+                    Err(anyhow!("{} does not exist. Continuing with defaults.", path.display()))
                 }
-                Some(_) if !path.exists() => {
-                    println!("The file {} does not exist. Continuing with defaults.", path.display());
+            });
+            // TODO consider returning the `Result<T, E>` object instead of handling it.
+            match possible_state {
+                Ok(state) => {
+                    *self = state;
+                    #[cfg(debug_assertions)]
+                    dbg!(toml::to_string_pretty(&self).ok());
                 }
-                Some(_) | None => {
-                    println!("Invalid value passed into --config. Make sure the file type is one of .json, .yaml or .toml. Continuing with defaults.");
+                Err(error) => {
+                    #[cfg(debug_assertions)]
+                    dbg!(error);
                 }
             }
         }
