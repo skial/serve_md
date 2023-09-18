@@ -35,17 +35,14 @@ pub enum MatterFormats {
 
 impl Display for MatterFormats {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            MatterFormats::Refdef => write!(f, "refdef"),
-            _ => {
-                let x:Result<GenericFormats, _> = self.try_into();
-                match x {
-                    Ok(gf) => {
-                        gf.fmt(f)
-                    },
-                    Err(_) => {
-                        Err(core::fmt::Error{})
-                    }
+        if self == & MatterFormats::Refdef { write!(f, "refdef") } else {
+            let x:Result<GenericFormats, _> = self.try_into();
+            match x {
+                Ok(gf) => {
+                    gf.fmt(f)
+                },
+                Err(_) => {
+                    Err(core::fmt::Error{})
                 }
             }
         }
