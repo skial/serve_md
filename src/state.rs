@@ -72,7 +72,17 @@ fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error
     let mut iter = s.chars();
     if let (Some('h'), Some(b)) = (iter.next(), iter.next()) {
         if let Some(digit) = b.to_digit(10) {
-            level = digit as u8;
+            match u8::try_from(digit) {
+                Ok(value) if (b'1'..=b'9').contains(&value) => {
+                    level = value;
+                }
+                Ok(value) => {
+                    return Err(anyhow!("{value} does not fall between 1..9.").into());
+                }
+                Err(error) => {
+                    return Err(anyhow!(error.to_string()).into());
+                }
+            }
         }
         match iter.next() {
             Some(':' | '=') | None => {},
@@ -99,7 +109,7 @@ impl State {
             let possible_state = path.extension()
             .and_then(OsStr::to_str)
             .ok_or_else(|| anyhow!("Unable to convert the path {} which is of type `OsStr`, to `&str`.", path.display()))
-            .and_then(|s| ConfigFormats::try_from(s))
+            .and_then(ConfigFormats::try_from)
             .and_then(|ext| {
                 if path.exists() {
                     File::open(path)
