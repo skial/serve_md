@@ -77,7 +77,7 @@ fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error
                     level = value;
                 }
                 Ok(value) => {
-                    return Err(anyhow!("{value} does not fall between 1..9.").into());
+                    return Err(anyhow!("{value} does not fall within 1..9.").into());
                 }
                 Err(error) => {
                     return Err(anyhow!(error.to_string()).into());
@@ -87,7 +87,7 @@ fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error
         match iter.next() {
             Some(':' | '=') | None => {},
             Some(_) => {
-                return Err(anyhow!("Third character after `h{}` must be a colon `:` or equals sign `=`.", level).into());
+                return Err(anyhow!("The third character after `h{}` must be a colon `:` or equals sign `=`.", level).into());
             },
         }
     } else {
