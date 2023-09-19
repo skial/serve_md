@@ -70,19 +70,27 @@ fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error
     assert!(s.len() > 2);
     let mut level = 0;
     let mut iter = s.chars();
-    if let (Some('h'), Some(b)) = (iter.next(), iter.next()) {
+    #[cfg(debug_assertions)]
+    dbg!(&iter);
+    let a = iter.next();
+    let b = iter.next();
+    if let (Some('h'), Some(b)) = (a, b) {
         if let Some(digit) = b.to_digit(10) {
+            #[cfg(debug_assertions)]
+            dbg!(digit);
             match u8::try_from(digit) {
-                Ok(value) if (b'1'..=b'9').contains(&value) => {
+                Ok(value) if (1..=6).contains(&value) => {
                     level = value;
                 }
                 Ok(value) => {
-                    return Err(anyhow!("{value} does not fall within 1..9.").into());
+                    return Err(anyhow!("Header level {value} does not fall within 1..6.").into());
                 }
                 Err(error) => {
                     return Err(anyhow!(error.to_string()).into());
                 }
             }
+        } else {
+            return Err(anyhow!("Header level is not a digit, it was {b}.").into());
         }
         match iter.next() {
             Some(':' | '=') | None => {},
@@ -157,6 +165,87 @@ impl TryFrom<(&str, ConfigFormats)> for State {
             ConfigFormats::Json => Ok(serde_json::from_str(value.0)?),
             ConfigFormats::Toml => Ok(toml::from_str(value.0)?),
             ConfigFormats::Yaml => Ok(serde_yaml::from_str(value.0)?),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_collapsible_headers;
+
+    #[test]
+    fn pch_test_ascii_digits() {
+        let mut results = vec![];
+        for char in '0'..='9' {
+            let value = format!("h{char}:other");
+            dbg!(&value);
+            results.push( parse_collapsible_headers(&value) );
+        }
+        dbg!(&results);
+        assert_eq!(results.len(), 10);
+        for i in 0..=9 {
+            match &results[i] {
+                Err(e) => if i == 0 || i > 6 {
+                    let ex = format!("Header level {i} does not fall within 1..6.");
+                    let msg = e.to_string();
+                    assert!( msg.contains(&ex) );
+                }
+                Ok(v) => {
+                    assert_eq!(v.0, i as u8);
+                    assert_eq!(v.1, "other");
+                }
+            }
+        }
+        
+    }
+
+    #[test]
+    fn pch_test_non_ascii_digits() {
+        let mut results = vec![];
+        let values = ['a', 'b', 'c'];
+        for char in values {
+            let value = format!("h{char}:other");
+            dbg!(&value);
+            results.push( parse_collapsible_headers(&value) );
+        }
+        dbg!(&results);
+        assert_eq!(results.len(), 3);
+        for i in 0..3 {
+            match &results[i] {
+                Err(e) => {
+                    let ex = format!("Header level is not a digit, it was {}.", values[i]);
+                    let msg = e.to_string();
+                    assert!( msg.contains(&ex) );
+                }
+                Ok(v) => {
+                    assert_eq!(v.0, i as u8);
+                    assert_eq!(v.1, "other");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pch_test_separator() {
+        let mut results = vec![];
+        let values = ["h1:other", "h2=other", "h3,other"];
+        for value in values {
+            results.push( parse_collapsible_headers(value) );
+        }
+        dbg!(&results);
+        assert_eq!(results.len(), 3);
+        for i in 0..3 {
+            match &results[i] {
+                Ok(v) => {
+                    assert_eq!(v.0, (i+1) as u8);
+                    assert_eq!(v.1, "other");
+                }
+                Err(e) => {
+                    let ex = format!("The third character after `h{}` must be a colon `:` or equals sign `=`.", (i+1));
+                    let msg = e.to_string();
+                    assert!( msg.contains(&ex) );
+                }
+            }
         }
     }
 }
