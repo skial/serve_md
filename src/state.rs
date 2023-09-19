@@ -67,8 +67,7 @@ pub struct State {
 fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error::Error + Send + Sync + 'static>> {
     #[cfg(debug_assertions)]
     dbg!(s);
-    assert!(s.len() > 2);
-    let mut level = 0;
+    let mut level = 1;
     let mut iter = s.chars();
     #[cfg(debug_assertions)]
     dbg!(&iter);
@@ -101,8 +100,13 @@ fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error
     } else {
         iter = s.chars();
     }
+
+    let remainder = iter.as_str().to_string();
+    if remainder.is_empty() {
+        return Err(anyhow!("Some text to match against is required after h{level}.").into());
+    }
     
-    Ok((level, iter.as_str().to_string()))
+    Ok((level, remainder))
 }
 
 impl State {
@@ -242,6 +246,30 @@ mod tests {
                 }
                 Err(e) => {
                     let ex = format!("The third character after `h{}` must be a colon `:` or equals sign `=`.", (i+1));
+                    let msg = e.to_string();
+                    assert!( msg.contains(&ex) );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pch_test_for_missing_text() {
+        let mut results = vec![];
+        let values = ["h1:other", "h2:", "h3"];
+        for value in values {
+            results.push( parse_collapsible_headers(value) );
+        }
+        dbg!(&results);
+        assert_eq!(results.len(), 3);
+        for i in 0..3 {
+            match &results[i] {
+                Ok(v) => {
+                    assert_eq!(v.0, (i+1) as u8);
+                    assert_eq!(v.1, "other");
+                }
+                Err(e) => {
+                    let ex = format!("Some text to match against is required after h{}.", (i+1));
                     let msg = e.to_string();
                     assert!( msg.contains(&ex) );
                 }
