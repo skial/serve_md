@@ -136,6 +136,7 @@ impl Plugin for Emoji {
         1
     }
 
+    /// Checks for the existence of a single emoji shortcode `:{value}:`.
     fn check_slice(&mut self, slice: &[(usize, Event)]) -> Option<Range<usize>> {
         match slice {
             [(i, Event::Text(value))] => {
@@ -161,28 +162,137 @@ impl Plugin for Emoji {
         None
     }
 
+    /// Replaces every occurance of a valid shortcode `:{value}:` with its emoji.
     fn replace_slice<'input>(&self, slice: &[(usize, Event<'input>)]) -> Vec<Event<'input>> {
         match slice {
-            [(_, event @ Event::Text(value))] => {
-                let pair = value
-                .find(':')
-                .and_then(|start| {
-                    value[start+1..].find(':').map(|end| ((start + 1)..=(start + end)))
-                })
-                .and_then(|range| emojis::get_by_shortcode(&value[range.clone()]).map(|emoji| (range, emoji)) )
-                .map(|tp| (tp.0, CowStr::Borrowed(tp.1.as_str())));
-                if let Some((range, emoji)) = pair {
-                    // Include the `:` characters again.
-                    vec![Event::Text( value.replace(&value[(range.start() - 1)..=*range.end() + 1], &emoji).into() )]
-                } else {
-                    #[cfg(debug_assertions)]
-                    dbg!(event);
-                    vec![event.clone()]
+            [(_, /*event @ */Event::Text(value))] => {
+                let mut ranges = vec![];
+                let mut range = None;
+                for value in value.char_indices() {
+                    match range {
+                        None => if value.1 == ':' {
+                            range = Some(value.0..0);
+                        }
+                        Some(incomplete) if value.1 == ':' => {
+                            if value.0+1 - incomplete.start > 2 {
+                                ranges.push( incomplete.start..value.0+1 );
+
+                            }
+                            range = None;
+                        }
+                        _ => {}
+                    }
                 }
+                if let Some(incomplete) = range {
+                    if incomplete.end == 0 { 
+                        let tmp = incomplete.start..value.len();
+                        if tmp.len() > 2 {
+                            ranges.push( tmp );
+                        }
+                        //range = None;
+                    }
+                }
+                ranges.reverse();
+                let mut result = value.clone().into_string();
+                #[cfg(debug_assertions)]
+                dbg!(&ranges);
+                for range in ranges {
+                    let opt = value.get(range.clone())
+                    .and_then(|s| Some((s, emojis::get_by_shortcode(&s[1..s.len()-1]))) )
+                    .and_then(|(s, emoji)| {
+                        #[cfg(debug_assertions)]
+                        dbg!(&s, &emoji);
+                        emoji.and_then(|emo| Some(emo.as_str()) ).map(|e| (s, e))
+                    });
+                    #[cfg(debug_assertions)]
+                    dbg!(&opt);
+                    if let Some((s, val)) = opt {
+                        result = result.replace(s, val);
+                    }
+                }
+                #[cfg(debug_assertions)]
+                dbg!(&result);
+                vec![Event::Text(CowStr::Boxed(result.into()))]
             },
             _ => {
                 slice.iter().map(|t| t.1.clone() ).collect()
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::vec;
+
+    use pulldown_cmark::Event;
+    use pulldown_cmark::CowStr;
+
+    use super::Emoji;
+    use super::Plugin;
+
+    #[test]
+    fn emoji_test_check_and_replace_slice() {
+        let mut plugin = Emoji{};
+        let input = [
+            (0, Event::Text(CowStr::Borrowed("Random text w/ shortcode :+1: emoji :smile: mixed in. :tada:"))),
+            (1, Event::Text(CowStr::Borrowed(":rocket::rocket::rocket:"))),
+        ];
+        let mut ranges = vec![];
+        let expected = [
+            Event::Text(CowStr::Borrowed("Random text w/ shortcode 👍 emoji 😄 mixed in. 🎉")),
+            Event::Text(CowStr::Borrowed("🚀🚀🚀")),
+        ];
+        for slice in input.windows(plugin.window_size()) {
+            ranges.push( plugin.check_slice(slice) );
+        }
+        assert!(!ranges.is_empty());
+        assert_eq!(ranges.len(), 2);
+        assert_eq!(ranges.iter().filter(|o| o.is_some()).count(), 2);
+        let mut results = vec![];
+        for op in ranges {
+            if let Some(range) = op {
+                results.extend_from_slice( &plugin.replace_slice(&input[range]) )
+            } else {
+                assert!(false);
+            }
+        }
+        assert!(!results.is_empty());
+        assert_eq!(expected.len(), results.len());
+        for i in 0..expected.len() {
+            assert_eq!(expected[i], results[i]);
+        }
+    }
+
+    #[test]
+    fn emoji_test_incomplete_shortcode() {
+        let mut plugin = Emoji{};
+        let input = [
+            (0, Event::Text(CowStr::Borrowed(":+1::+1:+1:"))),
+        ];
+        let mut ranges = vec![];
+        let expected = [
+            Event::Text(CowStr::Borrowed("👍👍+1:")),
+        ];
+        for slice in input.windows(plugin.window_size()) {
+            ranges.push( plugin.check_slice(slice) );
+        }
+        dbg!(&ranges);
+        assert!(!ranges.is_empty());
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges.iter().filter(|o| o.is_some()).count(), 1);
+        let mut results = vec![];
+        for op in ranges {
+            if let Some(range) = op {
+                results.extend_from_slice( &plugin.replace_slice(&input[range]) )
+            } else {
+                assert!(false);
+            }
+        }
+        assert!(!results.is_empty());
+        assert_eq!(expected.len(), results.len());
+        for i in 0..expected.len() {
+            assert_eq!(expected[i], results[i]);
         }
     }
 }
