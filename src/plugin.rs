@@ -97,7 +97,7 @@ impl Plugin for CollapsibleHeaders {
 
     fn final_check(&mut self, pos:usize) -> Option<Range<usize>> {
         #[cfg(debug_assertions)]
-        dbg!();
+        dbg!(pos);
         if let Some(ref mut range) = self.range {
             range.end = pos;
         }
@@ -225,9 +225,12 @@ impl Plugin for Emoji {
 mod tests {
     use std::vec;
 
+    use pulldown_cmark::HeadingLevel;
+    use pulldown_cmark::Tag;
     use pulldown_cmark::Event;
     use pulldown_cmark::CowStr;
 
+    use super::CollapsibleHeaders;
     use super::Emoji;
     use super::Plugin;
 
@@ -293,6 +296,85 @@ mod tests {
         assert_eq!(expected.len(), results.len());
         for i in 0..expected.len() {
             assert_eq!(expected[i], results[i]);
+        }
+    }
+
+    #[test]
+    fn ch_test_check_and_replace_slice() {
+        use pretty_assertions::assert_eq;
+
+        let input = [
+            (0, Event::Start(Tag::Heading(HeadingLevel::H6, None, vec![]))),
+            (1, Event::Start(Tag::Emphasis)),
+            (2, Event::Text(CowStr::Borrowed("text"))),
+            (3, Event::End(Tag::Emphasis)),
+            (4, Event::End(Tag::Heading(HeadingLevel::H6, None, vec![]))),
+            (5, Event::Start(Tag::Paragraph)),
+            (6, Event::Text(CowStr::Borrowed("some test text. a lil bit more."))),
+            (7, Event::End(Tag::Paragraph)),
+            (8, Event::Rule),
+            (9, Event::Start(Tag::Paragraph)),
+            (10, Event::Text(CowStr::Borrowed("Some more text that should not be captured by the plugin."))),
+            (11, Event::End(Tag::Paragraph)),
+            (12, Event::Start(Tag::Heading(HeadingLevel::H6, None, vec![]))),
+            (13, Event::Start(Tag::Emphasis)),
+            (14, Event::Text(CowStr::Borrowed("text"))),
+            (15, Event::End(Tag::Emphasis)),
+            (16, Event::End(Tag::Heading(HeadingLevel::H6, None, vec![]))),
+        ];
+
+        let level = 5;
+        let mut ranges = vec![];
+        let mut plugin = CollapsibleHeaders::new(level, "text".to_string());
+        for slice in input.windows(plugin.window_size()) {
+            if let Some(range) = plugin.check_slice(slice) {
+                ranges.push( range );
+            }
+        }
+        // Checks for any partially open ranges.
+        if let Some(range) = plugin.final_check(input.len()) {
+            ranges.push( range );
+        }
+
+        dbg!(&level, &ranges);
+        // As HeadingLevel::H6 is the max no matches should exist.
+        if level > 6 {
+            assert!(ranges.is_empty());
+        } else {
+            assert_eq!(ranges.len(), 2);
+            assert_eq!(ranges[0], 0..8);
+            assert_eq!(ranges[1], 12..17);
+
+            let output = &plugin.replace_slice(&input[ranges[0].clone()]);
+            assert!(!output.is_empty());
+            assert_eq!([
+                Event::Html(CowStr::Borrowed("<details open>")),
+                Event::SoftBreak,
+                Event::Html(CowStr::Borrowed("<summary>")),
+                Event::Start(Tag::Emphasis),
+                Event::Text(CowStr::Borrowed("text")),
+                Event::End(Tag::Emphasis),
+                Event::Html(CowStr::Borrowed("</summary>")),
+                Event::Start(Tag::Paragraph),
+                Event::Text(CowStr::Borrowed("some test text. a lil bit more.")),
+                Event::End(Tag::Paragraph),
+                Event::Html(CowStr::Borrowed("</details>")),
+            ][..], output[..]);
+
+            let output = &plugin.replace_slice(&input[ranges[1].clone()]);
+            dbg!(&input[ranges[1].clone()]);
+            dbg!(&output);
+            assert!(!output.is_empty());
+            assert_eq!([
+                Event::Html(CowStr::Borrowed("<details open>")),
+                Event::SoftBreak,
+                Event::Html(CowStr::Borrowed("<summary>")),
+                Event::Start(Tag::Emphasis),
+                Event::Text(CowStr::Borrowed("text")),
+                Event::End(Tag::Emphasis),
+                Event::Html(CowStr::Borrowed("</summary>")),
+                Event::Html(CowStr::Borrowed("</details>")),
+            ][..], output[..]);
         }
     }
 }

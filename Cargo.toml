@@ -29,3 +29,6 @@ lto = true
 opt-level = "z"
 strip = true
 panic = "abort"
+
+[dev-dependencies]
+pretty_assertions = "1.4.0"
