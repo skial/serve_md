@@ -1,8 +1,8 @@
 
 use anyhow::anyhow;
 use clap::Parser as CliParser;
+use crate::formats::{Config, Matter};
 use serde_derive::{Serialize, Deserialize};
-use crate::formats::{ConfigFormats, MatterFormats};
 
 use std::{
     str, 
@@ -46,7 +46,7 @@ pub struct State {
     pub header_attributes:bool,
     /// The type of front matter
     #[arg(short = 'm', long, value_enum)]
-    pub front_matter:Option<MatterFormats>,
+    pub front_matter:Option<Matter>,
 
     // --- Plugin options.
     /// Enables parsing emoji shortcodes, using GitHub flavoured shortcodes
@@ -121,7 +121,7 @@ impl State {
             let possible_state = path.extension()
             .and_then(OsStr::to_str)
             .ok_or_else(|| anyhow!("Unable to convert the path {} which is of type `OsStr`, to `&str`.", path.display()))
-            .and_then(ConfigFormats::try_from)
+            .and_then(Config::try_from)
             .and_then(|ext| {
                 if path.exists() {
                     File::open(path)
@@ -162,13 +162,13 @@ impl State {
     }
 }
 
-impl TryFrom<(&str, ConfigFormats)> for State {
+impl TryFrom<(&str, Config)> for State {
     type Error = anyhow::Error;
-    fn try_from(value: (&str, ConfigFormats)) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: (&str, Config)) -> core::result::Result<Self, Self::Error> {
         match value.1 {
-            ConfigFormats::Json => Ok(serde_json::from_str(value.0)?),
-            ConfigFormats::Toml => Ok(toml::from_str(value.0)?),
-            ConfigFormats::Yaml => Ok(serde_yaml::from_str(value.0)?),
+            Config::Json => Ok(serde_json::from_str(value.0)?),
+            Config::Toml => Ok(toml::from_str(value.0)?),
+            Config::Yaml => Ok(serde_yaml::from_str(value.0)?),
         }
     }
 }

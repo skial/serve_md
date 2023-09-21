@@ -28,9 +28,9 @@ use pulldown_cmark::{
 
 use state::State;
 use gray_matter::Pod;
-use formats::PayloadFormats;
 use serde_pickle::SerOptions;
 use tokio::fs::{try_exists, read};
+use formats::Payload as PayloadFormats;
 use serde_derive::{Serialize, Deserialize};
 
 use crate::plugin::{CollapsibleHeaders, Emoji, Plugin};

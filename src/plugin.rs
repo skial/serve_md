@@ -198,11 +198,11 @@ impl Plugin for Emoji {
                 dbg!(&ranges);
                 for range in ranges {
                     let opt = value.get(range.clone())
-                    .and_then(|s| Some((s, emojis::get_by_shortcode(&s[1..s.len()-1]))) )
+                    .map(|s| (s, emojis::get_by_shortcode(&s[1..s.len()-1])) )
                     .and_then(|(s, emoji)| {
                         #[cfg(debug_assertions)]
                         dbg!(&s, &emoji);
-                        emoji.and_then(|emo| Some(emo.as_str()) ).map(|e| (s, e))
+                        emoji.map(emojis::Emoji::as_str).map(|e| (s, e))
                     });
                     #[cfg(debug_assertions)]
                     dbg!(&opt);
