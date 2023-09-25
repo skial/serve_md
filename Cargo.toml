@@ -3,6 +3,16 @@ name = "serve_md"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+
+[[bin]]
+name="serve_md"
+path="src/bin/server.rs"
+
+#[[bin]]
+#name="parse_md"
+#path="src/bin/cli.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
