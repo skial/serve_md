@@ -1,29 +1,45 @@
 
 use anyhow::anyhow;
+use std::convert::TryFrom;
 use clap::Parser as CliParser;
 use crate::formats::{Config, Matter};
 use serde_derive::{Serialize, Deserialize};
 
 use std::{
     str, 
-    env,
     fs::File, 
     io::Read,
     ffi::OsStr,
     path::Path as SysPath, 
 };
 
+#[cfg(feature = "server")]
+use std::env;
+
 // TODO idk if its appropiate rust to use an state object as a cli/bin - dual purpose and all?
 #[derive(Debug, Default, CliParser, Deserialize, Serialize)]
 #[serde(default = "State::default")]
 pub struct State {
     // --- Http server options.
-    /// Set the root directory to serve .md files from
-    #[arg(long)]
+    /// The root directory to serve .md files from
+    #[cfg(feature = "server")]
+    #[cfg_attr(feature = "server", arg(long))]
     pub root:Option<String>,
+
     /// The port to bind the serve_md server too
-    #[arg(long, default_value_t = 8083)]
+    #[cfg(feature = "server")]
+    #[cfg_attr(feature = "server", arg(long, default_value_t = 8083))]
     pub port:u16,
+
+    // The path to the .md file to load
+    #[cfg(not(feature = "server"))]
+    #[cfg_attr(not(feature = "server"), arg(short = 'i', long))]
+    pub file:Option<String>,
+
+    // The path to output too
+    #[cfg(not(feature = "server"))]
+    #[cfg_attr(not(feature = "server"), arg(short, long))]
+    pub output:Option<String>,
     
     // --- Markdown options.
     /// Enables parsing tables
@@ -147,6 +163,7 @@ impl State {
         }
     }
 
+    #[cfg(feature = "server")]
     // TODO rename to sensible defaults?
     pub fn set_missing(&mut self) {
         if self.port == 0 {
@@ -159,6 +176,11 @@ impl State {
                 }
             }
         }
+    }
+
+    #[cfg(not(feature = "server"))]
+    pub fn set_missing(&mut self) {
+        
     }
 }
 

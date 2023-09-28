@@ -1,12 +1,12 @@
 extern crate alloc;
 
+use tokio::signal;
 use alloc::sync::Arc;
 use std::net::SocketAddr;
-use axum::{ Router, routing::get, };
-use serve_md::state::State as Cli;
+use serve_md_async::determine;
 use clap::Parser as CliParser;
-use tokio::signal;
-use serve_md::determine;
+use axum::{ Router, routing::get, };
+use serve_md_core::state::State as Cli;
 
 #[tokio::main]
 async fn main() {
