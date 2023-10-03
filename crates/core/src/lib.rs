@@ -82,10 +82,12 @@ pub fn generate_payload_from_file(mut file: File, state: Arc<State>) -> Result<P
 pub fn generate_payload_from_slice(slice: &[u8], state: Arc<State>) -> Result<Payload, anyhow::Error> {
     let mut pod:Pod = Pod::String(String::new());
 
+    // Attempt to extract front matter placed into `pod`, with remaing content as
+    // `Vec<u8>`.
     let tp = state.front_matter.and_then(|fm| 
         str::from_utf8(slice).ok().and_then(|s| fm.as_pod(s)) 
     );
-    // TODO have `as_pod` return a `range` to modify `slice` with, indicating the start of the content instead of returning the shortened string.
+    
     let mut input = slice.to_vec();
     if let Some((p, v)) = tp {
         pod = p;
@@ -139,7 +141,7 @@ pub fn make_commonmark_parser<'input>(text: &'input str, state: &'input Arc<Stat
     CmParser::new_ext(text, md_opt)
 }
 
-pub fn make_commonmark_plugins(state:&Arc<State>) -> Vec<Box<dyn Plugin>> {
+pub fn make_commonmark_plugins(state: &Arc<State>) -> Vec<Box<dyn Plugin>> {
     let mut plugins: Vec<Box<dyn Plugin>> = vec![];
     if state.emoji_shortcodes {
         plugins.push(Box::new(Emoji));
@@ -152,9 +154,9 @@ pub fn make_commonmark_plugins(state:&Arc<State>) -> Vec<Box<dyn Plugin>> {
 }
 
 pub fn process_commonmark_tokens<'input>(parser: CmParser<'input, 'input>, mut plugins: Vec<Box<dyn Plugin>>) -> Vec<Event<'input>> {
-    let mut collection_vec:Vec<_> = (0..).zip(parser).collect();
+    let mut collection_vec: Vec<_> = (0..).zip(parser).collect();
     let mut collection_slice = collection_vec.as_slice();
-    let mut new_collection:Vec<Event> = vec![];
+    let mut new_collection: Vec<Event> = vec![];
     let len = plugins.len();
 
     if plugins.is_empty() {
@@ -205,7 +207,7 @@ pub fn check_collection_with(plugin: &mut Box<dyn Plugin>, collection: &[(usize,
 
 #[allow(clippy::indexing_slicing)]
 pub fn rewrite_collection_with<'input>(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Event<'input>)], ranges: &[Range<usize>]) -> Vec<Event<'input>> {
-    let mut idx:usize = 0;
+    let mut idx: usize = 0;
     let mut range_idx: usize = 0;
 
     debug_assert!( !ranges.is_empty() );
@@ -240,41 +242,36 @@ pub fn rewrite_collection_with<'input>(plugin: &mut Box<dyn Plugin>, collection:
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Payload {
-    pub front_matter:serde_json::Value,
-    pub html:String,
+    pub front_matter: serde_json::Value,
+    pub html: String,
 }
 
 impl Payload {
-    pub fn into_response_for(self, extension:&PayloadFormats) -> Result<Vec<u8>, anyhow::Error> {
+    pub fn into_response_for(self, extension: &PayloadFormats) -> Result<Vec<u8>, anyhow::Error> {
         match extension {
             PayloadFormats::Html => {
-                return Ok(self.html.into())
+                Ok(self.html.into())
             }
             PayloadFormats::Json => {
-                if let Ok(json) = serde_json::to_string_pretty(&self) {
-                    return Ok(json.into())
-                }
+                let s = serde_json::to_string_pretty(&self)?;
+                Ok(s.into())
             }
             PayloadFormats::Yaml => {
-                if let Ok(yaml) = serde_yaml::to_string(&self) {
-                    return Ok(yaml.into())
-                }
+                let yaml = serde_yaml::to_string(&self)?;
+                Ok(yaml.into())
             }
             PayloadFormats::Toml => {
-                if let Ok(toml) = toml::to_string_pretty(&self) {
-                    return Ok(toml.into())
-                }
+                let toml = toml::to_string_pretty(&self)?;
+                Ok(toml.into())
             }
             PayloadFormats::Pickle => {
-                if let Ok(pickle) = serde_pickle::to_vec(&self, SerOptions::default()) {
-                    return Ok(pickle)
-                }
+                let pickle = serde_pickle::to_vec(&self, SerOptions::default())?;
+                Ok(pickle)
             }
             _ => {
-                return Err(anyhow!("Not valid."))
+                Err(anyhow!("Not valid."))
             }
         }
-        Err(anyhow!("Not valid."))
     }
 }
 

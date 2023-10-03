@@ -95,7 +95,7 @@ impl Plugin for CollapsibleHeaders {
         None
     }
 
-    fn final_check(&mut self, pos:usize) -> Option<Range<usize>> {
+    fn final_check(&mut self, pos: usize) -> Option<Range<usize>> {
         #[cfg(debug_assertions)]
         dbg!(pos);
         if let Some(ref mut range) = self.range {

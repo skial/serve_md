@@ -5,8 +5,8 @@ use std::{collections::HashMap, str};
 
 #[derive(Debug, Clone)]
 pub struct RefDefMatter<'input> {
-    slice:&'input [u8],
-    range:Option<Range<usize>>,
+    slice: &'input [u8],
+    range: Option<Range<usize>>,
 }
 
 impl<'input> RefDefMatter<'input> {
@@ -16,10 +16,9 @@ impl<'input> RefDefMatter<'input> {
     }
 
     pub fn scan(&mut self) {
-        // Current each refdef needs to be contained on a single line.
-        // Unlike valid commonmark, no newlines can exist between any part of a refdef,
-        // it has to fit entirely on a single line.
-        let mut til_end:bool = false;
+        // Currently each refdef needs to be contained on a single line.
+        // Unlike valid commonmark, no newlines can exist between any part of a refdef.
+        let mut til_end: bool = false;
 
         for i in 0..self.slice.len() {
             match self.slice[i] {
@@ -75,7 +74,7 @@ impl<'input> RefDefMatter<'input> {
             // It would be nice to have regex syntax highlighting & compile time
             // checks to make sure its valid. Clippy? cargo extension?? IDE extension???
             if let Ok(re) = Regex::new(r#"\[(?<id>[^\[\]]+)\]:\s(?<uri>[^\n\r"]+)("(?<title>[^"]+)")?"#) {
-                let mut map:HashMap<String, Pod> = HashMap::new();
+                let mut map: HashMap<String, Pod> = HashMap::new();
 
                 lines
                 .filter_map(|line| {
@@ -128,7 +127,7 @@ impl<'input> RefDefMatter<'input> {
         None
     }
 
-    fn regex_to_hash_entries(uri:Match, title:Option<Match>) -> HashMap<String, Pod> {
+    fn regex_to_hash_entries(uri: Match, title: Option<Match>) -> HashMap<String, Pod> {
         [
             Some(("uri".to_string(), Pod::String(uri.as_str().to_string()))),
             title.is_some().then_some(("title".to_string(), title

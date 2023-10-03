@@ -24,59 +24,59 @@ pub struct State {
     /// The root directory to serve .md files from
     #[cfg(feature = "server")]
     #[cfg_attr(feature = "server", arg(long))]
-    pub root:Option<String>,
+    pub root: Option<String>,
 
     /// The port to bind the serve_md server too
     #[cfg(feature = "server")]
     #[cfg_attr(feature = "server", arg(long, default_value_t = 8083))]
-    pub port:u16,
+    pub port: u16,
 
     // The path to the .md file to load
     #[cfg(not(feature = "server"))]
     #[cfg_attr(not(feature = "server"), arg(short = 'i', long))]
-    pub file:Option<String>,
+    pub file: Option<String>,
 
     // The path to output too
     #[cfg(not(feature = "server"))]
     #[cfg_attr(not(feature = "server"), arg(short, long))]
-    pub output:Option<String>,
+    pub output: Option<String>,
     
     // --- Markdown options.
     /// Enables parsing tables
     #[arg(short, long)]
-    pub tables:bool,
+    pub tables: bool,
     /// Enables parsing footnotes
     #[arg(short, long)]
-    pub footnotes:bool,
+    pub footnotes: bool,
     /// Enables parsing strikethrough
     #[arg(short, long)]
-    pub strikethrough:bool,
+    pub strikethrough: bool,
     /// Enables parsing tasklists
     #[arg(short = 'l', long)]
-    pub tasklists:bool,
+    pub tasklists: bool,
     /// Enables smart punctuation
     #[arg(short = 'p', long)]
-    pub smart_punctuation:bool,
+    pub smart_punctuation: bool,
     /// Enables header attributes
     #[arg(short = 'a', long)]
-    pub header_attributes:bool,
+    pub header_attributes: bool,
     /// The type of front matter
     #[arg(short = 'm', long, value_enum)]
-    pub front_matter:Option<Matter>,
+    pub front_matter: Option<Matter>,
 
     // --- Plugin options.
     /// Enables parsing emoji shortcodes, using GitHub flavoured shortcodes
     #[arg(short, long)]
-    pub emoji_shortcodes:bool,
+    pub emoji_shortcodes: bool,
     /// Enables converting headers into collapsible sections using the <details> element
     #[arg(short = 'k', long, value_parser = parse_collapsible_headers)]
-    pub collapsible_headers:Option<(u8, String)>,
+    pub collapsible_headers: Option<(u8, String)>,
 
     // ---
     /// Use a configuration file instead
     #[arg(short, long)]
     #[serde(skip)]
-    config:Option<String>,
+    config: Option<String>,
 }
 
 // @see https://github.com/clap-rs/clap/blob/7f8df272d90afde89e40de086492e1c9f5749897/examples/typed-derive.rs#L24
