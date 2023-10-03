@@ -30,11 +30,12 @@ use formats::Payload as PayloadFormats;
 use serde_derive::{Serialize, Deserialize};
 use plugin::{CollapsibleHeaders, Emoji, Plugin};
 
-pub fn determine(path: String, state: Arc<State>) -> Result<Vec<u8>, anyhow::Error> {
+pub fn determine(path: &str, state: Arc<State>) -> Result<Vec<u8>, anyhow::Error> {
     #[cfg(debug_assertions)]
     dbg!(&path);
 
-    let path_ext = SysPath::new(&path).extension();
+    let sys_path = SysPath::new(&path);
+    let path_ext = sys_path.extension();
     let extension = path_ext
     .and_then(OsStr::to_str)
     .and_then(|s| PayloadFormats::try_from(s).ok());
@@ -46,11 +47,11 @@ pub fn determine(path: String, state: Arc<State>) -> Result<Vec<u8>, anyhow::Err
             return fetch_md(path).or(Err(anyhow!("bad request")))
 
         }
-        return generate_payload(path, state)?.into_response_for(extension);
+        return generate_payload_from_path(sys_path, state)?.into_response_for(extension);
 
     }
 
-    Err(anyhow!("Not found."))
+    Err(anyhow!("File path {} not found.", path))
 }
 
 fn fetch_md(path: String) -> std::io::Result<Vec<u8>> {
@@ -64,41 +65,52 @@ fn fetch_md(path: String) -> std::io::Result<Vec<u8>> {
     Err(ErrorKind::NotFound.into())
 }
 
-fn generate_payload(path: String, state: Arc<State>) -> Result<Payload, anyhow::Error> {
-    if SysPath::new(&path).exists() {
-        let mut input = fetch_md(path)?;
-        let mut pod:Pod = Pod::String(String::new());
-
-        let tp = state.front_matter.and_then(|fm| 
-            str::from_utf8(&input).ok().and_then(|s| fm.as_pod(s)) 
-        );
-        if let Some((p, v)) = tp {
-            pod = p;
-            input = v;
-        }
-
-        return if let Ok(s) = str::from_utf8(&input[..]) {
-            let md_parser = make_commonmark_parser(s, &state);
-            let plugins = make_commonmark_plugins(&state);
-            let new_collection = process_commonmark_tokens(md_parser, plugins);
-
-            let mut html_output = String::new();
-            html::push_html(&mut html_output,  new_collection.into_iter());
-
-            // TODO consider merging other found refdefs into map, if possible at all.
-            /*for i in md_parser.reference_definitions().iter() {
-                println!("{:?}", i);
-            }*/
-
-            Ok(Payload { html: html_output, front_matter:pod.into() })
-
-        } else {
-            // Utf8Error
-            Err(anyhow!("No content."))
-        }
+pub fn generate_payload_from_path(file_path: &std::path::Path, state: Arc<State>) -> Result<Payload, anyhow::Error> {
+    if file_path.exists() {
+        return generate_payload_from_file(File::open(file_path)?, state)
     }
 
-    Err(anyhow!("Not found."))
+    Err(anyhow!("Path {} does not exist.", file_path.to_string_lossy()))
+}
+
+pub fn generate_payload_from_file(mut file: File, state: Arc<State>) -> Result<Payload, anyhow::Error> {
+    let mut buf = vec![];
+    file.read_to_end(&mut buf)?;
+    generate_payload_from_slice(&buf, state)
+}
+
+pub fn generate_payload_from_slice(slice: &[u8], state: Arc<State>) -> Result<Payload, anyhow::Error> {
+    let mut pod:Pod = Pod::String(String::new());
+
+    let tp = state.front_matter.and_then(|fm| 
+        str::from_utf8(slice).ok().and_then(|s| fm.as_pod(s)) 
+    );
+    // TODO have `as_pod` return a `range` to modify `slice` with, indicating the start of the content instead of returning the shortened string.
+    let mut input = slice.to_vec();
+    if let Some((p, v)) = tp {
+        pod = p;
+        input = v;
+    }
+
+    return if let Ok(s) = str::from_utf8(&input[..]) {
+        let md_parser = make_commonmark_parser(s, &state);
+        let plugins = make_commonmark_plugins(&state);
+        let new_collection = process_commonmark_tokens(md_parser, plugins);
+
+        let mut html_output = String::new();
+        html::push_html(&mut html_output,  new_collection.into_iter());
+
+        // TODO consider merging other found refdefs into map, if possible at all.
+        /*for i in md_parser.reference_definitions().iter() {
+            println!("{:?}", i);
+        }*/
+
+        Ok(Payload { html: html_output, front_matter: pod.into() })
+
+    } else {
+        // Utf8Error
+        Err(anyhow!("Content failed to be parsed into utf8."))
+    }
 }
 
 pub fn make_commonmark_parser<'input>(text: &'input str, state: &'input Arc<State>) -> CmParser<'input, 'input> {

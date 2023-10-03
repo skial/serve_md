@@ -12,13 +12,10 @@ use axum::{
     response::{Html, IntoResponse, Response, Result},
 };
 
-use pulldown_cmark::html;
-
-use serve_md_core::*;
-use gray_matter::Pod;
 use serve_md_core::Payload;
 use serve_md_core::state::State;
 use tokio::fs::{try_exists, read};
+use serve_md_core::generate_payload_from_slice;
 use serve_md_core::formats::Payload as PayloadFormats;
 
 /// # Errors
@@ -53,11 +50,11 @@ pub async fn determine(Path(path):Path<String>, state:Arc<State>) -> Result<Resp
         return str::from_utf8(&buf)
             .or(Err(StatusCode::BAD_REQUEST.into()))
             .map(ToString::to_string)
-            .and_then(|v| {
+            .map(|v| {
                 if let PayloadFormats::Html = extension {
-                    Ok(Html(v).into_response())
+                    Html(v).into_response()
                 } else {
-                    Ok(IntoResponse::into_response(v))
+                    IntoResponse::into_response(v)
                 }
             })
     }
@@ -74,36 +71,10 @@ async fn fetch_md(path: &String) -> std::io::Result<Vec<u8>> {
 
 async fn generate_payload(path:String, state:Arc<State>) -> Result<Payload> {
     if tokio::fs::try_exists(&path).await.map_err(|_| StatusCode::NOT_FOUND)? {
-        let mut input = fetch_md(&path).await.map_err(|_| StatusCode::NOT_FOUND)?;
-        let mut pod:Pod = Pod::String(String::new());
-
-        let tp = state.front_matter.and_then(|fm| 
-            str::from_utf8(&input).ok().and_then(|s| fm.as_pod(s)) 
-        );
-        if let Some((p, v)) = tp {
-            pod = p;
-            input = v;
-        }
-
-        return if let Ok(s) = str::from_utf8(&input[..]) {
-            let md_parser = make_commonmark_parser(s, &state);
-            let plugins = make_commonmark_plugins(&state);
-            let new_collection = process_commonmark_tokens(md_parser, plugins);
-
-            let mut html_output = String::new();
-            html::push_html(&mut html_output,  new_collection.into_iter());
-
-            // TODO consider merging other found refdefs into map, if possible at all.
-            /*for i in md_parser.reference_definitions().iter() {
-                println!("{:?}", i);
-            }*/
-
-            Ok(Payload { html: html_output, front_matter:pod.into() })
-
-        } else {
-            // Utf8Error
-            Err(StatusCode::NO_CONTENT.into())
-        }
+        // TODO handle errors better.
+        let input = fetch_md(&path).await.map_err(|_| StatusCode::NOT_FOUND)?;
+        return generate_payload_from_slice(&input[..], state)
+            .or(Err(StatusCode::NO_CONTENT.into()))
     }
 
     Err(StatusCode::NOT_FOUND.into())

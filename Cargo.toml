@@ -3,11 +3,8 @@
 members = [
     "crates/core",
     "crates/async",
-    #"crates/serve_md",
-    #"crates/parse_md",
 ]
 
-# TODO consider move these two paths into `binaries/*`?
 exclude = [
     "binary/serve_md",
     "binary/parse_md"
