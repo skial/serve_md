@@ -23,14 +23,14 @@ use pulldown_cmark::{
 };
 
 use state::State;
-use anyhow::anyhow;
 use gray_matter::Pod;
+use anyhow::{anyhow, Result, Context};
 use serde_pickle::SerOptions;
 use formats::Payload as PayloadFormats;
 use serde_derive::{Serialize, Deserialize};
 use plugin::{CollapsibleHeaders, Emoji, Plugin};
 
-pub fn determine(path: &str, state: Arc<State>) -> Result<Vec<u8>, anyhow::Error> {
+pub fn determine(path: &str, state: Arc<State>) -> Result<Vec<u8>> {
     #[cfg(debug_assertions)]
     dbg!(&path);
 
@@ -44,7 +44,7 @@ pub fn determine(path: &str, state: Arc<State>) -> Result<Vec<u8>, anyhow::Error
         let path = path.replace(&(".".to_owned() + &extension.to_string()), ".md");
         // Handle commonmark requests early
         if extension == &PayloadFormats::Markdown {
-            return fetch_md(path).or(Err(anyhow!("bad request")))
+            return fetch_md(&path).context(format!("There was an error trying to read the markdown file {}", path))
 
         }
         return generate_payload_from_path(sys_path, state)?.into_response_for(extension);
@@ -54,7 +54,7 @@ pub fn determine(path: &str, state: Arc<State>) -> Result<Vec<u8>, anyhow::Error
     Err(anyhow!("File path {} not found.", path))
 }
 
-fn fetch_md(path: String) -> std::io::Result<Vec<u8>> {
+fn fetch_md(path: &str) -> std::io::Result<Vec<u8>> {
     if SysPath::new(&path).exists() {
         let file = File::open(path);
         let mut buf = vec![];
@@ -65,7 +65,7 @@ fn fetch_md(path: String) -> std::io::Result<Vec<u8>> {
     Err(ErrorKind::NotFound.into())
 }
 
-pub fn generate_payload_from_path(file_path: &std::path::Path, state: Arc<State>) -> Result<Payload, anyhow::Error> {
+pub fn generate_payload_from_path(file_path: &std::path::Path, state: Arc<State>) -> Result<Payload> {
     if file_path.exists() {
         return generate_payload_from_file(File::open(file_path)?, state)
     }
@@ -73,13 +73,13 @@ pub fn generate_payload_from_path(file_path: &std::path::Path, state: Arc<State>
     Err(anyhow!("Path {} does not exist.", file_path.to_string_lossy()))
 }
 
-pub fn generate_payload_from_file(mut file: File, state: Arc<State>) -> Result<Payload, anyhow::Error> {
+pub fn generate_payload_from_file(mut file: File, state: Arc<State>) -> Result<Payload> {
     let mut buf = vec![];
     file.read_to_end(&mut buf)?;
     generate_payload_from_slice(&buf, state)
 }
 
-pub fn generate_payload_from_slice(slice: &[u8], state: Arc<State>) -> Result<Payload, anyhow::Error> {
+pub fn generate_payload_from_slice(slice: &[u8], state: Arc<State>) -> Result<Payload> {
     let mut pod:Pod = Pod::String(String::new());
 
     // Attempt to extract front matter placed into `pod`, with remaing content as
@@ -247,7 +247,7 @@ pub struct Payload {
 }
 
 impl Payload {
-    pub fn into_response_for(self, extension: &PayloadFormats) -> Result<Vec<u8>, anyhow::Error> {
+    pub fn into_response_for(self, extension: &PayloadFormats) -> Result<Vec<u8>> {
         match extension {
             PayloadFormats::Html => {
                 Ok(self.html.into())
