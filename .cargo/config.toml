@@ -19,4 +19,5 @@ chatty = """clippy -- -W clippy::pedantic -W clippy::correctness \
 -W clippy::rc_buffer \
 -W clippy::ref_patterns \
 -W clippy::single_char_lifetime_names \
+-W clippy::needless_pass_by_ref_mut \
 """
