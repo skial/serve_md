@@ -9,3 +9,5 @@ exclude = [
     "binary/serve_md",
     "binary/parse_md"
 ]
+
+resolver = "2"
