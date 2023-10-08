@@ -44,7 +44,7 @@ pub fn determine(path: &str, state: Arc<State>) -> Result<Vec<u8>> {
         let path = path.replace(&(".".to_owned() + &extension.to_string()), ".md");
         // Handle commonmark requests early
         if extension == &PayloadFormats::Markdown {
-            return fetch_md(&path).context(format!("There was an error trying to read the markdown file {}", path))
+            return fetch_md(&path).context(format!("There was an error trying to read the markdown file {path}"))
 
         }
         return generate_payload_from_path(sys_path, state)?.into_response_for(extension);
@@ -115,7 +115,7 @@ pub fn generate_payload_from_slice(slice: &[u8], state: Arc<State>) -> Result<Pa
     }
 }
 
-pub fn make_commonmark_parser<'input>(text: &'input str, state: &'input Arc<State>) -> CmParser<'input, 'input> {
+fn make_commonmark_parser<'input>(text: &'input str, state: &'input Arc<State>) -> CmParser<'input, 'input> {
     let mut md_opt = Options::empty();
     if state.tables {
         md_opt.insert(Options::ENABLE_TABLES);
@@ -141,7 +141,7 @@ pub fn make_commonmark_parser<'input>(text: &'input str, state: &'input Arc<Stat
     CmParser::new_ext(text, md_opt)
 }
 
-pub fn make_commonmark_plugins(state: &Arc<State>) -> Vec<Box<dyn Plugin>> {
+fn make_commonmark_plugins(state: &Arc<State>) -> Vec<Box<dyn Plugin>> {
     let mut plugins: Vec<Box<dyn Plugin>> = vec![];
     if state.emoji_shortcodes {
         plugins.push(Box::new(Emoji));
@@ -153,7 +153,7 @@ pub fn make_commonmark_plugins(state: &Arc<State>) -> Vec<Box<dyn Plugin>> {
     plugins
 }
 
-pub fn process_commonmark_tokens<'input>(parser: CmParser<'input, 'input>, mut plugins: Vec<Box<dyn Plugin>>) -> Vec<Event<'input>> {
+fn process_commonmark_tokens<'input>(parser: CmParser<'input, 'input>, mut plugins: Vec<Box<dyn Plugin>>) -> Vec<Event<'input>> {
     let mut collection_vec: Vec<_> = (0..).zip(parser).collect();
     let mut collection_slice = collection_vec.as_slice();
     let mut new_collection: Vec<Event> = vec![];
@@ -182,7 +182,7 @@ pub fn process_commonmark_tokens<'input>(parser: CmParser<'input, 'input>, mut p
     new_collection
 }
 
-pub fn check_collection_with(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Event)]) -> Option<Vec<Range<usize>>> {
+fn check_collection_with(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Event)]) -> Option<Vec<Range<usize>>> {
     let mut ranges = Vec::new();
     for slice in collection.windows(plugin.window_size()) {
         if let Some(range) = plugin.check_slice(slice) {
@@ -206,7 +206,7 @@ pub fn check_collection_with(plugin: &mut Box<dyn Plugin>, collection: &[(usize,
 }
 
 #[allow(clippy::indexing_slicing)]
-pub fn rewrite_collection_with<'input>(plugin: &mut Box<dyn Plugin>, collection: &[(usize, Event<'input>)], ranges: &[Range<usize>]) -> Vec<Event<'input>> {
+fn rewrite_collection_with<'input>(plugin: &Box<dyn Plugin>, collection: &[(usize, Event<'input>)], ranges: &[Range<usize>]) -> Vec<Event<'input>> {
     let mut idx: usize = 0;
     let mut range_idx: usize = 0;
 
