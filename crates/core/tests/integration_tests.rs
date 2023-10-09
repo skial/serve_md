@@ -1,6 +1,12 @@
 use indoc::indoc;
-use std::{sync::Arc, path::Path, collections::HashMap, hash::Hash};
-use serve_md_core::{determine, state::State, generate_payload_from_path, formats::Matter, Payload, generate_payload_from_slice};
+use std::{sync::Arc, path::Path};
+use serve_md_core::{
+    determine, 
+    state::State, 
+    formats::Matter, 
+    generate_payload_from_path, 
+    generate_payload_from_slice
+};
 
 #[test]
 fn test_determine_with_existing_file() {
