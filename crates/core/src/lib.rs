@@ -62,7 +62,7 @@ fn fetch_md(path: &str) -> std::io::Result<Vec<u8>> {
         return Ok(buf);
     }
 
-    Err(ErrorKind::NotFound.into())
+    Err(std::io::Error::from(ErrorKind::NotFound))
 }
 
 pub fn generate_payload_from_path(file_path: &std::path::Path, state: Arc<State>) -> Result<Payload> {

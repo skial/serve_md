@@ -1,0 +1,6 @@
+tables = true
+tasklists = true
+front_matter = "Refdef"
+emoji_shortcodes = true
+header_attributes = true
+collapsible_headers = [5, "in case you missed it"]
