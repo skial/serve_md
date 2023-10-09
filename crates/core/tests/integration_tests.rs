@@ -1,5 +1,6 @@
-use std::{sync::Arc, path::Path};
-use serve_md_core::{determine, state::State, generate_payload_from_path};
+use indoc::indoc;
+use std::{sync::Arc, path::Path, collections::HashMap, hash::Hash};
+use serve_md_core::{determine, state::State, generate_payload_from_path, formats::Matter, Payload, generate_payload_from_slice};
 
 #[test]
 fn test_determine_with_existing_file() {
@@ -97,7 +98,7 @@ fn test_gen_payload_from_path() {
             );
             assert_eq!(
                 payload.html,
-                indoc::indoc! {r#"<h1>Header 1!</h1>
+                indoc! {r#"<h1>Header 1!</h1>
                 <p>some text that should be informative</p>
                 <ul>
                 <li>list item 1</li>
@@ -111,6 +112,55 @@ fn test_gen_payload_from_path() {
         },
         Err(e) => {
             assert!( false, "Should NEVER return an error. Error was {e}" );
+        }
+    }
+}
+
+#[test]
+fn test_gen_payload() {
+    use pretty_assertions::assert_eq;
+    let input = indoc! {r#"[key]: /uri/path "title"
+    [key]: /dif/path
+
+    # Header
+    some text.
+    "#};
+    let mut state = State::default();
+    state.front_matter = Some(Matter::Refdef);
+    let expected_json = indoc! {r#"{
+      "front_matter": {
+        "key": [
+          {
+            "title": "title",
+            "uri": "/uri/path "
+          },
+          {
+            "uri": "/dif/path"
+          }
+        ]
+      },
+      "html": "<h1>Header</h1>\n<p>some text.</p>\n"
+    }"#};
+    let payload = generate_payload_from_slice(input.as_bytes(), Arc::new(state));
+    match payload {
+        Ok(payload) => {
+            dbg!(&payload);
+            match payload.into_response_for(&serve_md_core::formats::Payload::Json) {
+                Ok(vec) => {
+                    assert_eq!(
+                        std::str::from_utf8(&vec).unwrap(),
+                        expected_json
+                    )
+                }
+                Err(error) => {
+                    dbg!(&error);
+                    assert!( false, "Should NEVER return an error. Error was {error}.")
+                }
+            }
+        }
+        Err(error) => {
+            dbg!(&error);
+            assert!( false, "Should NEVER return an error. Error was {error}.")
         }
     }
 }
