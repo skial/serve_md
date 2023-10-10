@@ -1,17 +1,10 @@
-
-use anyhow::anyhow;
-use core::convert::TryFrom;
-use clap::Parser as CliParser;
 use crate::formats::{Config, Matter};
-use serde_derive::{Serialize, Deserialize};
+use anyhow::anyhow;
+use clap::Parser as CliParser;
+use core::convert::TryFrom;
+use serde_derive::{Deserialize, Serialize};
 
-use std::{
-    str, 
-    fs::File, 
-    io::Read,
-    ffi::OsStr,
-    path::Path as SysPath, 
-};
+use std::{ffi::OsStr, fs::File, io::Read, path::Path as SysPath, str};
 
 #[cfg(feature = "server")]
 use std::env;
@@ -40,7 +33,7 @@ pub struct State {
     #[cfg(not(feature = "server"))]
     #[cfg_attr(not(feature = "server"), arg(short, long))]
     pub output: Option<String>,
-    
+
     // --- Markdown options.
     /// Enables parsing tables
     #[arg(short, long)]
@@ -80,7 +73,9 @@ pub struct State {
 }
 
 // @see https://github.com/clap-rs/clap/blob/7f8df272d90afde89e40de086492e1c9f5749897/examples/typed-derive.rs#L24
-fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error::Error + Send + Sync + 'static>> {
+fn parse_collapsible_headers(
+    s: &str,
+) -> Result<(u8, String), Box<dyn std::error::Error + Send + Sync + 'static>> {
     #[cfg(debug_assertions)]
     dbg!(s);
     let mut level = 1;
@@ -108,10 +103,14 @@ fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error
             return Err(anyhow!("Header level is not a digit, it was {b}.").into());
         }
         match iter.next() {
-            Some(':' | '=') | None => {},
+            Some(':' | '=') | None => {}
             Some(_) => {
-                return Err(anyhow!("The third character after `h{}` must be a colon `:` or equals sign `=`.", level).into());
-            },
+                return Err(anyhow!(
+                    "The third character after `h{}` must be a colon `:` or equals sign `=`.",
+                    level
+                )
+                .into());
+            }
         }
     } else {
         iter = s.chars();
@@ -121,7 +120,7 @@ fn parse_collapsible_headers(s: &str) -> Result<(u8, String), Box<dyn std::error
     if remainder.is_empty() {
         return Err(anyhow!("Some text to match against is required after h{level}.").into());
     }
-    
+
     Ok((level, remainder))
 }
 
@@ -134,20 +133,29 @@ impl State {
         if let Some(config) = &self.config {
             let path = SysPath::new(&config);
             let mut buf = String::new();
-            let possible_state = path.extension()
-            .and_then(OsStr::to_str)
-            .ok_or_else(|| anyhow!("Unable to convert the path {} which is of type `OsStr`, to `&str`.", path.display()))
-            .and_then(Config::try_from)
-            .and_then(|ext| {
-                if path.exists() {
-                    File::open(path)
-                    .and_then(|mut file| file.read_to_string(&mut buf))
-                    .map_err(|error| anyhow!(error.to_string()))
-                    .and_then(|_| State::try_from((buf.as_str(), ext)) )
-                } else {
-                    Err(anyhow!("{} does not exist. Continuing with defaults.", path.display()))
-                }
-            });
+            let possible_state = path
+                .extension()
+                .and_then(OsStr::to_str)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Unable to convert the path {} which is of type `OsStr`, to `&str`.",
+                        path.display()
+                    )
+                })
+                .and_then(Config::try_from)
+                .and_then(|ext| {
+                    if path.exists() {
+                        File::open(path)
+                            .and_then(|mut file| file.read_to_string(&mut buf))
+                            .map_err(|error| anyhow!(error.to_string()))
+                            .and_then(|_| State::try_from((buf.as_str(), ext)))
+                    } else {
+                        Err(anyhow!(
+                            "{} does not exist. Continuing with defaults.",
+                            path.display()
+                        ))
+                    }
+                });
             // TODO consider returning the `Result<T, E>` object instead of handling it.
             match possible_state {
                 Ok(state) => {
@@ -179,9 +187,7 @@ impl State {
     }
 
     #[cfg(not(feature = "server"))]
-    pub fn set_missing(&mut self) {
-        
-    }
+    pub fn set_missing(&mut self) {}
 }
 
 impl TryFrom<(&str, Config)> for State {
@@ -205,16 +211,18 @@ mod tests {
         for char in '0'..='9' {
             let value = format!("h{char}:other");
             dbg!(&value);
-            results.push( parse_collapsible_headers(&value) );
+            results.push(parse_collapsible_headers(&value));
         }
         dbg!(&results);
         assert_eq!(results.len(), 10);
         for i in 0..=9 {
             match &results[i] {
-                Err(e) => if i == 0 || i > 6 {
-                    let ex = format!("Header level {i} does not fall within 1..6.");
-                    let msg = e.to_string();
-                    assert!( msg.contains(&ex) );
+                Err(e) => {
+                    if i == 0 || i > 6 {
+                        let ex = format!("Header level {i} does not fall within 1..6.");
+                        let msg = e.to_string();
+                        assert!(msg.contains(&ex));
+                    }
                 }
                 Ok(v) => {
                     assert_eq!(v.0, i as u8);
@@ -222,7 +230,6 @@ mod tests {
                 }
             }
         }
-        
     }
 
     #[test]
@@ -232,7 +239,7 @@ mod tests {
         for char in values {
             let value = format!("h{char}:other");
             dbg!(&value);
-            results.push( parse_collapsible_headers(&value) );
+            results.push(parse_collapsible_headers(&value));
         }
         dbg!(&results);
         assert_eq!(results.len(), 3);
@@ -241,7 +248,7 @@ mod tests {
                 Err(e) => {
                     let ex = format!("Header level is not a digit, it was {}.", values[i]);
                     let msg = e.to_string();
-                    assert!( msg.contains(&ex) );
+                    assert!(msg.contains(&ex));
                 }
                 Ok(v) => {
                     assert_eq!(v.0, i as u8);
@@ -256,20 +263,23 @@ mod tests {
         let mut results = vec![];
         let values = ["h1:other", "h2=other", "h3,other"];
         for value in values {
-            results.push( parse_collapsible_headers(value) );
+            results.push(parse_collapsible_headers(value));
         }
         dbg!(&results);
         assert_eq!(results.len(), 3);
         for i in 0..3 {
             match &results[i] {
                 Ok(v) => {
-                    assert_eq!(v.0, (i+1) as u8);
+                    assert_eq!(v.0, (i + 1) as u8);
                     assert_eq!(v.1, "other");
                 }
                 Err(e) => {
-                    let ex = format!("The third character after `h{}` must be a colon `:` or equals sign `=`.", (i+1));
+                    let ex = format!(
+                        "The third character after `h{}` must be a colon `:` or equals sign `=`.",
+                        (i + 1)
+                    );
                     let msg = e.to_string();
-                    assert!( msg.contains(&ex) );
+                    assert!(msg.contains(&ex));
                 }
             }
         }
@@ -280,20 +290,20 @@ mod tests {
         let mut results = vec![];
         let values = ["h1:other", "h2:", "h3"];
         for value in values {
-            results.push( parse_collapsible_headers(value) );
+            results.push(parse_collapsible_headers(value));
         }
         dbg!(&results);
         assert_eq!(results.len(), 3);
         for i in 0..3 {
             match &results[i] {
                 Ok(v) => {
-                    assert_eq!(v.0, (i+1) as u8);
+                    assert_eq!(v.0, (i + 1) as u8);
                     assert_eq!(v.1, "other");
                 }
                 Err(e) => {
-                    let ex = format!("Some text to match against is required after h{}.", (i+1));
+                    let ex = format!("Some text to match against is required after h{}.", (i + 1));
                     let msg = e.to_string();
-                    assert!( msg.contains(&ex) );
+                    assert!(msg.contains(&ex));
                 }
             }
         }

@@ -1,19 +1,16 @@
 use indoc::indoc;
-use std::{sync::Arc, path::Path};
 use serve_md_core::{
-    determine, 
-    state::State, 
-    formats::Matter, 
-    generate_payload_from_path, 
-    generate_payload_from_slice
+    determine, formats::Matter, generate_payload_from_path, generate_payload_from_slice,
+    state::State,
 };
+use std::{path::Path, sync::Arc};
 
 #[test]
 fn test_determine_with_existing_file() {
     let path = format!("{}\\resources\\hio.md", env!("CARGO_MANIFEST_DIR"));
     let v = determine(&path, Arc::new(State::default()));
     dbg!(&v);
-    assert!( v.is_ok() );
+    assert!(v.is_ok());
 }
 
 #[test]
@@ -24,7 +21,7 @@ fn test_determine_with_missing_file() {
     let v = determine(&path, Arc::new(State::default()));
     dbg!(&v);
     match v {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             assert_eq!(
                 e.to_string(),
@@ -32,22 +29,19 @@ fn test_determine_with_missing_file() {
             );
             let dwn = e.downcast_ref::<std::io::Error>();
             match dwn {
-                Some(ee) => {
-                    match ee.kind() {
-                        std::io::ErrorKind::NotFound => {
-                            assert!(true);
-                            return;
-                        }
-                        _ => {},
+                Some(ee) => match ee.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        assert!(true);
+                        return;
                     }
-                }
-                _ => {},
+                    _ => {}
+                },
+                _ => {}
             }
         }
     }
-    assert!( false, "Should have returned an error." )
+    assert!(false, "Should have returned an error.")
 }
-
 
 #[test]
 fn test_determine_with_incorrect_extension() {
@@ -57,16 +51,13 @@ fn test_determine_with_incorrect_extension() {
     let v = determine(&path, Arc::new(State::default()));
     dbg!(&v);
     match v {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
-            assert_eq!(
-                e.to_string(),
-                format!("File path {path} not found."),
-            );
+            assert_eq!(e.to_string(), format!("File path {path} not found."),);
             return;
         }
     }
-    assert!( false, "Should have returned an error." )
+    assert!(false, "Should have returned an error.")
 }
 
 #[test]
@@ -77,16 +68,13 @@ fn test_gen_payload_missing_file() {
     let v = generate_payload_from_path(Path::new(&path), Arc::new(State::default()));
     dbg!(&v);
     match v {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
-            assert_eq!(
-                e.to_string(),
-                format!("Path {path} does not exist."),
-            );
+            assert_eq!(e.to_string(), format!("Path {path} does not exist."),);
             return;
         }
     }
-    assert!( false, "Should have returned an error." )
+    assert!(false, "Should have returned an error.")
 }
 
 #[test]
@@ -98,10 +86,7 @@ fn test_gen_payload_from_path() {
     dbg!(&v);
     match v {
         Ok(payload) => {
-            assert_eq!( 
-                payload.front_matter,
-                ""
-            );
+            assert_eq!(payload.front_matter, "");
             assert_eq!(
                 payload.html,
                 indoc! {r#"<h1>Header 1!</h1>
@@ -115,9 +100,9 @@ fn test_gen_payload_from_path() {
                 <p>hello world</p>
                 "#}
             )
-        },
+        }
         Err(e) => {
-            assert!( false, "Should NEVER return an error. Error was {e}" );
+            assert!(false, "Should NEVER return an error. Error was {e}");
         }
     }
 }
@@ -153,20 +138,17 @@ fn test_gen_payload() {
             dbg!(&payload);
             match payload.into_response_for(&serve_md_core::formats::Payload::Json) {
                 Ok(vec) => {
-                    assert_eq!(
-                        std::str::from_utf8(&vec).unwrap(),
-                        expected_json
-                    )
+                    assert_eq!(std::str::from_utf8(&vec).unwrap(), expected_json)
                 }
                 Err(error) => {
                     dbg!(&error);
-                    assert!( false, "Should NEVER return an error. Error was {error}.")
+                    assert!(false, "Should NEVER return an error. Error was {error}.")
                 }
             }
         }
         Err(error) => {
             dbg!(&error);
-            assert!( false, "Should NEVER return an error. Error was {error}.")
+            assert!(false, "Should NEVER return an error. Error was {error}.")
         }
     }
 }

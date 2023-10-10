@@ -1,36 +1,36 @@
 use std::{
+    ffi::OsStr,
+    io::{Error, ErrorKind},
+    path::Path as SysPath,
     str,
     sync::Arc,
-    ffi::OsStr,
-    path::Path as SysPath, 
-    io::{Error, ErrorKind}, 
 };
 
 use axum::{
-    extract::Path, 
-    http::StatusCode, 
+    extract::Path,
+    http::StatusCode,
     response::{Html, IntoResponse, Response, Result},
 };
 
-use serve_md_core::Payload;
-use serve_md_core::state::State;
-use tokio::fs::{try_exists, read};
-use serve_md_core::generate_payload_from_slice;
 use serve_md_core::formats::Payload as PayloadFormats;
+use serve_md_core::generate_payload_from_slice;
+use serve_md_core::state::State;
+use serve_md_core::Payload;
+use tokio::fs::{read, try_exists};
 
 /// # Errors
-/// 
+///
 /// Will return:
 /// - `StatusCode::NOT_FOUND` for unresolved files.
 /// - `StatusCode::BAD_REQUEST` for files not valid UTF8.
-pub async fn determine(Path(path):Path<String>, state:Arc<State>) -> Result<Response> {
+pub async fn determine(Path(path): Path<String>, state: Arc<State>) -> Result<Response> {
     #[cfg(debug_assertions)]
     dbg!(&path);
-    
+
     let path_ext = SysPath::new(&path).extension();
     let extension = path_ext
-    .and_then(OsStr::to_str)
-    .and_then(|s| PayloadFormats::try_from(s).ok());
+        .and_then(OsStr::to_str)
+        .and_then(|s| PayloadFormats::try_from(s).ok());
 
     if let Some(extension) = &extension {
         let path = path.replace(&(".".to_owned() + &extension.to_string()), ".md");
@@ -40,13 +40,13 @@ pub async fn determine(Path(path):Path<String>, state:Arc<State>) -> Result<Resp
             return str::from_utf8(&buf)
                 .or(Err(StatusCode::BAD_REQUEST.into()))
                 .map(ToString::to_string)
-                .map(IntoResponse::into_response)
-
+                .map(IntoResponse::into_response);
         }
-        let buf = generate_payload(path, state).await?
+        let buf = generate_payload(path, state)
+            .await?
             .into_response_for(extension)
             .or(Err(StatusCode::BAD_REQUEST))?;
-        
+
         return str::from_utf8(&buf)
             .or(Err(StatusCode::BAD_REQUEST.into()))
             .map(ToString::to_string)
@@ -56,25 +56,28 @@ pub async fn determine(Path(path):Path<String>, state:Arc<State>) -> Result<Resp
                 } else {
                     IntoResponse::into_response(v)
                 }
-            })
+            });
     }
     Err(StatusCode::BAD_REQUEST.into())
 }
 
 async fn fetch_md(path: &String) -> std::io::Result<Vec<u8>> {
     if try_exists(path).await? {
-        return read(path).await
+        return read(path).await;
     }
 
     Err(Error::from(ErrorKind::NotFound))
 }
 
-async fn generate_payload(path:String, state:Arc<State>) -> Result<Payload> {
-    if tokio::fs::try_exists(&path).await.map_err(|_| StatusCode::NOT_FOUND)? {
+async fn generate_payload(path: String, state: Arc<State>) -> Result<Payload> {
+    if tokio::fs::try_exists(&path)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?
+    {
         // TODO handle errors better.
         let input = fetch_md(&path).await.map_err(|_| StatusCode::NOT_FOUND)?;
         return generate_payload_from_slice(&input[..], state)
-            .or(Err(StatusCode::NO_CONTENT.into()))
+            .or(Err(StatusCode::NO_CONTENT.into()));
     }
 
     Err(StatusCode::NOT_FOUND.into())
