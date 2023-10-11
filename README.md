@@ -1,5 +1,7 @@
 # _md
 
+[![Tests](https://github.com/skial/serve_md/actions/workflows/test.yaml/badge.svg)](https://github.com/skial/serve_md/actions/workflows/test.yaml)
+
 Just another commonmark/markdown render.
 
 #### Options

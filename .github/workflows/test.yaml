@@ -1,4 +1,4 @@
-name: Run tests for `{core/async}_md` crates.
+name: Run tests for `{core/async}_md`.
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
-    name: ${{ matrix.os }} | `cargo check/test`
+    name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
