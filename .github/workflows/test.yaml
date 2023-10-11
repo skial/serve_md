@@ -1,4 +1,4 @@
-name: Run tests for `{core/async}_md`.
+name: Tests
 
 on:
   workflow_dispatch:
