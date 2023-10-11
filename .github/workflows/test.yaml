@@ -1,4 +1,4 @@
-name: Test _md
+name: Run tests for `{core/async}_md` crates.
 
 on:
   workflow_dispatch:
@@ -9,7 +9,12 @@ on:
 
 jobs:
   cargo-test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    name: Test & check with `cargo check/test` on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
