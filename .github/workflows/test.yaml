@@ -1,0 +1,25 @@
+name: Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    brances:
+      - main
+
+jobs:
+  cargo-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check
+      - run: cargo test

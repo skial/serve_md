@@ -3,14 +3,19 @@ use serve_md_core::{
     determine, formats::Matter, generate_payload_from_path, generate_payload_from_slice,
     state::State,
 };
-use std::{path::Path, sync::Arc};
+use std::{path::{Path, PathBuf}, sync::Arc};
 
 #[test]
 fn test_determine_with_existing_file() {
-    let path = format!("{}\\resources\\hio.md", env!("CARGO_MANIFEST_DIR"));
-    let v = determine(&path, Arc::new(State::default()));
-    dbg!(&v);
-    assert!(v.is_ok());
+    let path:PathBuf = [env!("CARGO_MANIFEST_DIR"), "resources", "hio.md"].iter().collect();
+    if let Some(path) = path.to_str() {
+        let v = determine(&path, Arc::new(State::default()));
+        dbg!(&v);
+        assert!(v.is_ok());
+    } else {
+        assert!(false, "Failed to build path.")
+    }
+    
 }
 
 #[test]
@@ -81,7 +86,7 @@ fn test_gen_payload_missing_file() {
 fn test_gen_payload_from_path() {
     use pretty_assertions::assert_eq;
 
-    let path = format!("{}\\resources\\test.md", env!("CARGO_MANIFEST_DIR"));
+    let path:PathBuf = [env!("CARGO_MANIFEST_DIR"), "resources", "test.md"].iter().collect();
     let v = generate_payload_from_path(Path::new(&path), Arc::new(State::default()));
     dbg!(&v);
     match v {
