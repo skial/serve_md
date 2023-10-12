@@ -1,0 +1,31 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    brances:
+      - main
+
+jobs:
+  create-bin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-assets:
+    strategy:
+      matrix:
+        binary: [parse_md, serve_md]
+    needs: create-bin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          dry-run: true
+          manifest-path: 'binary/${{ matrix.binary }}/Cargo.toml'
+          bin: ${{ matrix.binary }}
+          token: ${{ secrets.GITHUB_TOKEN }}
