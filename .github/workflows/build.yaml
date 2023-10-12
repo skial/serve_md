@@ -13,7 +13,7 @@ jobs:
         binary: [parse_md, serve_md]
         os: [ubuntu-latest, windows-latest, macos-latest]
 
-    name: Build &{{ matrix.binary }} release on ${{ matrix.os }}
+    name: Build ${{ matrix.binary }} release on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
