@@ -11,28 +11,22 @@ jobs:
     strategy:
       matrix:
         binary: [parse_md, serve_md]
-        include:
-          - target: x86_64-pc-windows-gnu
-            archive: zip
-          - target: x86_64-unknown-linux-musl
-            archive: tar.gz tar.xz tar.zst
-          - target: x86_64-apple-darwin
-            archive: zip
-    runs-on: ubuntu-latest
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    name: Build Release ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: rust-build/rust-build.action@v1.4.3
-        env:
-          SRC_DIR: 'binary/${{ matrix.binary }}'
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install stable rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          RUSTTARGET: ${{ matrix.target }}
-          ARCHIVE_TYPES: ${{ matrix.archive }}
-          UPLOAD_MODE: none
+          toolchain: stable
+      - name: Cache rust
+        uses: Swatinem/rust-cache@v2
+      - name: Build binary ${{ matrix.binary }}
+        run: cargo build --release --manifest-path binary/${{ matrix.binary }}/Cargo.toml
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: Binary
-          path: |
-            ${{ steps.compile.outputs.BUILT_ARCHIVE }}
-            ${{ steps.compile.outputs.BUILT_CHECKSUM }}
+          name: ${{ matrix.binary }}-latest
+          path: binary/${{ matrix.binary }}/target/release/${{ matrix.binary }}*
