@@ -13,7 +13,7 @@ jobs:
         binary: [parse_md, serve_md]
         os: [ubuntu-latest, windows-latest, macos-latest]
 
-    name: Build Release ${{ matrix.os }}
+    name: Build &{{ matrix.binary }} release on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -28,5 +28,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.binary }}-latest
+          name: ${{ matrix.binary }}-${{ matrix.os }}
           path: binary/${{ matrix.binary }}/target/release/${{ matrix.binary }}*
