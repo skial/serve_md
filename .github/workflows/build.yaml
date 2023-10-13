@@ -7,18 +7,7 @@ on:
       - main
 
 jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: ./.github/workflows/test.yaml
-
   build-upload-assets:
-    needs: test
-    
     strategy:
       matrix:
         binary: [parse_md, serve_md]
@@ -27,13 +16,16 @@ jobs:
     name: Build ${{ matrix.binary }} release on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install stable rust
-        uses: dtolnay/rust-toolchain@stable
+      #- uses: actions/checkout@v4
+      #- name: Install stable rust
+      #  uses: dtolnay/rust-toolchain@stable
+      #  with:
+      #    toolchain: stable
+      #- name: Cache rust
+      #  uses: Swatinem/rust-cache@v2
+      - uses: ./.github/workflows/test.yaml
         with:
-          toolchain: stable
-      - name: Cache rust
-        uses: Swatinem/rust-cache@v2
+          target: ${{ matrix.os }}
       - name: Build binary ${{ matrix.binary }}
         run: cargo build --release --manifest-path binary/${{ matrix.binary }}/Cargo.toml
       - name: Upload artifact
