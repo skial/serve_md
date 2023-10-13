@@ -11,10 +11,10 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        
-    - uses: ./.github/workflows/test.yaml
-        with:
-          target: ${{ matrix.os }}
+
+    uses: ./.github/workflows/test.yaml
+    with:
+      target: ${{ matrix.os }}
           
   build-upload-assets:
     needs: check-test
