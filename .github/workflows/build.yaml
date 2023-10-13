@@ -29,4 +29,6 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.binary }}-${{ matrix.os }}
-          path: binary/${{ matrix.binary }}/target/release/${{ matrix.binary }}*
+          path: |
+            binary/${{ matrix.binary }}/target/release/${{ matrix.binary }}*
+            !binary/${{ matrix.binary }}/target/release/${{ matrix.binary }}.d*
