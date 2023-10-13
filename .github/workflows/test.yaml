@@ -22,5 +22,7 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "${{ runner.os }}-${{ steps.rust-toolchain.outputs.cachekey }}"
       - run: cargo check
       - run: cargo test

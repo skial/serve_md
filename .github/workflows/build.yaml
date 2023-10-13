@@ -28,6 +28,8 @@ jobs:
           toolchain: stable
       - name: Cache rust
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "${{ runner.os }}-${{ steps.rust-toolchain.outputs.cachekey }}"
       - name: Build binary ${{ matrix.binary }}
         run: cargo build --release --manifest-path binary/${{ matrix.binary }}/Cargo.toml
       - name: Upload artifact
