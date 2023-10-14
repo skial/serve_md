@@ -1,4 +1,4 @@
-# _md
+# :sassy_man:_md
 
 [![Tests](https://github.com/skial/serve_md/actions/workflows/test.yaml/badge.svg)](https://github.com/skial/serve_md/actions/workflows/test.yaml)
 
@@ -11,8 +11,8 @@ Just another commonmark/markdown render.
 - Header attributes
 - GitHub flavoured tables, task lists & strikethrough.
 - Front matter parsing _(either YAML, JSON, TOML or Refdef)_.
-    - A Refdef is any _simple_ [link reference definition](https://spec.commonmark.org/0.30/#link-reference-definitions) that precedes the main content.
-    - Simple in the sense that the link reference definition fits on a single line.
+    - A Refdef is any _simple_ [link **ref**erence **def**inition](https://spec.commonmark.org/0.30/#link-reference-definitions) that precedes the main content.
+    - Simple in the sense that the link refdef fits on a single line.
 - Collaspible headers
     - Turns specific headers into:
         ```html
@@ -26,9 +26,11 @@ Just another commonmark/markdown render.
 
 This project started out _(and continues)_ as a way to get more familiar with the Rust language, its various libraries, the tooling and the wider ecosystem.
 
+The refdef and collaspible headers are custom formats used in the haxe.io markdown files.
+
 ## parse_md
 
-Processes specified input `.md` file to stdout or specified output file.
+Processes the specified input `.md` file to stdout or to the specified output file.
 
 <details>
 
